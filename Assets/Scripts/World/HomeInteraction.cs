@@ -1,5 +1,7 @@
+using System.Text;
 using MaliGo.Characters;
 using MaliGo.Data;
+using MaliGo.Economy;
 using MaliGo.PlayerIdentity;
 using MaliGo.UI;
 using UnityEngine;
@@ -7,8 +9,10 @@ using UnityEngine;
 namespace MaliGo.World
 {
     /// <summary>
-    /// Home: the player's base. View current finances and goal, and rest to recover energy.
-    /// Reviewing recent decisions and ending the day are deferred until the day cycle exists.
+    /// Home: the player's base. Shows current finances, the goal and upcoming bills, and is
+    /// where the day ends: sleeping moves to the next day, charges whatever bills fall due
+    /// and restores energy. Kept deliberately minimal - the fuller day cycle (an end-of-day
+    /// event and summary, new scenarios each day) builds on SleepAndEndDay().
     /// </summary>
     public class HomeInteraction : ProximityInteraction
     {
@@ -29,7 +33,7 @@ namespace MaliGo.World
         {
             panel.Show("Home", BuildStatusText, new[]
             {
-                new ActionPanelUI.ActionButton("Rest (+30 energy)", Rest)
+                new ActionPanelUI.ActionButton("Sleep - end the day", SleepAndEndDay)
             });
         }
 
@@ -44,26 +48,91 @@ namespace MaliGo.World
             FinancialStats stats = data.financialStats;
             FinancialGoal goal = data.GetPrimaryGoal();
 
-            return $"Cash: R{stats.cash:0}\n" +
-                   $"Savings: R{stats.savings:0}\n" +
-                   $"Financial Stress: {stats.financialStress:0}%\n" +
-                   $"Energy: {stats.energy:0}%\n" +
-                   $"Goal - {goal.goalName}: R{goal.currentAmount:0} / R{goal.targetAmount:0}";
+            var text = new StringBuilder();
+            text.Append($"Day {data.currentDay}\n");
+            text.Append($"Cash: R{stats.cash:0}\n");
+            text.Append($"Savings: R{stats.savings:0}\n");
+            text.Append($"Financial Stress: {stats.financialStress:0}%\n");
+            text.Append($"Energy: {stats.energy:0}%\n");
+            text.Append($"Goal - {goal.goalName}: R{goal.currentAmount:0} / R{goal.targetAmount:0}\n");
+            AppendBills(text, data);
+            return text.ToString();
         }
 
-        void Rest()
+        static void AppendBills(StringBuilder text, PlayerData data)
+        {
+            if (data.obligations == null || data.obligations.Length == 0)
+            {
+                return;
+            }
+
+            text.Append("\nBills:\n");
+            foreach (Obligation bill in data.obligations)
+            {
+                if (bill == null)
+                {
+                    continue;
+                }
+
+                text.Append($"{bill.label}: R{bill.amount:0}");
+                if (bill.paymentsRemaining != 0)
+                {
+                    // Bills are charged when the player sleeps, so count in nights: a bill due
+                    // on tomorrow's day number comes off tonight.
+                    int nights = bill.nextDueDay - data.currentDay;
+                    text.Append(nights <= 1 ? " due tonight" : $" due in {nights} nights");
+                }
+
+                if (bill.arrears > 0f)
+                {
+                    text.Append($" (R{bill.arrears:0} still owed)");
+                }
+
+                text.Append('\n');
+            }
+        }
+
+        void SleepAndEndDay()
         {
             if (PlayerDataManager.Instance == null)
             {
                 return;
             }
 
+            ObligationSettlement settlement = null;
+
             PlayerDataManager.Instance.UpdatePlayerData(data =>
             {
-                data.financialStats.energy = Mathf.Clamp(data.financialStats.energy + 30f, 0f, 100f);
+                data.currentDay = Mathf.Max(1, data.currentDay) + 1;
+                settlement = ObligationLedger.SettleDue(data, data.currentDay);
+                data.financialStats.energy = 100f;
             }, saveImmediately: true);
 
-            ShowMaliLine("A bit of rest goes a long way, {0}.");
+            if (settlement != null)
+            {
+                ShowMaliLine(DescribeNight(settlement));
+            }
+        }
+
+        /// <summary>What happened overnight, stated plainly: what was paid and what's still owed. No verdict.</summary>
+        static string DescribeNight(ObligationSettlement settlement)
+        {
+            var line = new StringBuilder($"Morning, {{0}}. Day {settlement.day}.");
+
+            if (settlement.payments.Count == 0)
+            {
+                line.Append(" No bills came off overnight.");
+                return line.ToString();
+            }
+
+            foreach (ObligationPayment payment in settlement.payments)
+            {
+                line.Append(payment.stillOwed > 0f
+                    ? $" {payment.label}: R{payment.paid:0} paid, R{payment.stillOwed:0} still owed."
+                    : $" {payment.label}: R{payment.paid:0} paid.");
+            }
+
+            return line.ToString();
         }
 
         static void ShowMaliLine(string template)

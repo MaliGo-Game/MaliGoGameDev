@@ -99,6 +99,14 @@ namespace MaliGo.PlayerIdentity
                 loaded.progression ??= new ProgressionData();
                 loaded.goals ??= Array.Empty<FinancialGoal>();
                 loaded.completedScenarioIds ??= Array.Empty<string>();
+                loaded.obligations ??= Array.Empty<Obligation>();
+                if (loaded.currentDay < 1)
+                {
+                    loaded.currentDay = 1;
+                }
+
+                // Saves made before bills existed get the default ones, once.
+                ObligationDefaults.AddBaseObligations(loaded);
 
                 currentPlayer = loaded;
                 NotifyChanged();

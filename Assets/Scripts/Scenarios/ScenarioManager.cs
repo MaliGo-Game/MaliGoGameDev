@@ -66,6 +66,12 @@ namespace MaliGo.Scenarios
                 return false;
             }
 
+            // Each scenario is played once; replaying the windfall would hand out free money.
+            if (player != null && player.IsScenarioCompleted(scenario.scenarioId))
+            {
+                return false;
+            }
+
             scenarioInProgress = true;
 
             string characterName = PlayerDataAccess.GetCharacterName();
@@ -117,6 +123,7 @@ namespace MaliGo.Scenarios
                 data.financialProfile.savingBehaviour = DescribeSaving(stats.savingBehaviourScore);
 
                 MarkScenarioCompleted(data, scenario.scenarioId);
+                AddRepayments(data, scenario, choice);
             }, saveImmediately: true);
         }
 
@@ -168,6 +175,29 @@ namespace MaliGo.Scenarios
             if (score > 0.6f) return "consistent";
             if (score < 0.35f) return "rarely";
             return "sometimes";
+        }
+
+        /// <summary>
+        /// Turns a pay-later style choice into real repayments, so the cost keeps arriving
+        /// after the choice instead of ending at the deposit.
+        /// </summary>
+        static void AddRepayments(PlayerData data, ScenarioDefinition scenario, ScenarioChoice choice)
+        {
+            if (choice.instalmentCount <= 0 || choice.instalmentAmount <= 0f)
+            {
+                return;
+            }
+
+            int interval = Mathf.Max(1, choice.instalmentIntervalDays);
+            ObligationDefaults.AddObligation(data, new Obligation
+            {
+                obligationId = $"{scenario.scenarioId}_{choice.choiceId}",
+                label = string.IsNullOrWhiteSpace(choice.instalmentLabel) ? choice.label : choice.instalmentLabel,
+                amount = choice.instalmentAmount,
+                intervalDays = interval,
+                nextDueDay = data.currentDay + interval,
+                paymentsRemaining = choice.instalmentCount
+            });
         }
 
         static void MarkScenarioCompleted(PlayerData data, string scenarioId)

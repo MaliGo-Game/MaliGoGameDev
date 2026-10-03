@@ -41,6 +41,17 @@ namespace MaliGo.Scenarios
 
         void Update()
         {
+            // A finished scenario's location goes quiet for good, including after a reload,
+            // because completion is read from the saved player data.
+            if (IsCompleted())
+            {
+                if (promptRoot != null && promptRoot.activeSelf)
+                {
+                    promptRoot.SetActive(false);
+                }
+                return;
+            }
+
             RefreshPlayerReference();
             bool inRange = IsPlayerInRange();
             bool scenarioBusy = ScenarioManager.Instance != null && ScenarioManager.Instance.IsScenarioInProgress;
@@ -54,6 +65,12 @@ namespace MaliGo.Scenarios
             {
                 TryTrigger();
             }
+        }
+
+        bool IsCompleted()
+        {
+            var player = PlayerIdentity.PlayerDataAccess.GetCurrentPlayer();
+            return player != null && player.IsScenarioCompleted(scenarioId);
         }
 
         void RefreshPlayerReference()

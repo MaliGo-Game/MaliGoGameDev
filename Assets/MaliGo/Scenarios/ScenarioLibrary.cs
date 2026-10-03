@@ -408,12 +408,16 @@ namespace MaliGo.Scenarios
                 {
                     choiceId = "buy_now_pay_later",
                     label = "Take it home, pay later (R50 deposit)",
-                    description = "Cash -R50, Stress +3 (ongoing obligation)",
+                    description = "Cash -R50 now, then R120 a week for 3 weeks",
                     cashDelta = -50f,
                     financialStressDelta = 3f,
                     behaviourTag = ScenarioBehaviourTag.Discretionary,
                     financialXpDelta = 5f,
-                    maliReactionLine = "It's yours today, {0} - just remember next month's budget already has a piece spoken for."
+                    instalmentCount = 3,
+                    instalmentAmount = 120f,
+                    instalmentIntervalDays = 7,
+                    instalmentLabel = "Pay-later instalment",
+                    maliReactionLine = "It's yours today, {0} - just remember the next few weeks already have a piece spoken for."
                 },
                 new ScenarioChoice
                 {

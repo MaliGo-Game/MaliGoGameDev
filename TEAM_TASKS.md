@@ -1,6 +1,6 @@
 # MaliGo Unity — Remaining Dev Work
 
-**Repo:** https://github.com/0geder/MaliGoGameDev (branch `main`)
+**Repo:** https://github.com/MaliGo-Game/MaliGoGameDev (branch `main`)
 **Read first:** `README.md` (what the game is and how it's built)
 
 The game builds and runs. Choices now have lasting costs (one-time scenarios, one work

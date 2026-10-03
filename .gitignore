@@ -115,3 +115,6 @@ Assets/kenney_city-kit-suburban_20/
 # Unity crash/auto-recovery scenes
 /[Aa]ssets/_Recovery/
 /[Aa]ssets/_Recovery.meta
+
+# Founder-only notes (the repo is public)
+docs/internal/

@@ -121,3 +121,10 @@ docs/internal/
 
 # Personal documents dropped in the project root (the repo is public)
 /*.pdf
+
+# Logic tests run outside Unity (tools/logic_tests): build output and tool output
+tools/logic_tests/bin/
+tools/logic_tests/obj/
+tools/out/
+# The test project itself is source (the template above ignores *.csproj)
+!tools/logic_tests/LogicTests.csproj

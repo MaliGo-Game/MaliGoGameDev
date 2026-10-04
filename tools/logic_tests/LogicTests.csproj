@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    MaliGo logic tests, outside Unity (design spec 2.5). Run from the repo root with
+    "dotnet run" and the project option pointing at tools/logic_tests.
+    Compiles the pure logic folders of the Unity project against UnityShim.cs. Every file in these
+    folders must use only System.* and the shim.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyName>MaliGoLogicTests</AssemblyName>
+    <RootNamespace>MaliGoLogicTests</RootNamespace>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS0414;CS0649;CS0169</NoWarn>
+    <AssetsRoot>$(MSBuildThisFileDirectory)..\..\Assets\</AssetsRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(AssetsRoot)MaliGo\Data\**\*.cs" />
+    <Compile Include="$(AssetsRoot)MaliGo\Scenarios\**\*.cs" />
+    <Compile Include="$(AssetsRoot)MaliGo\Dialogue\**\*.cs" />
+    <Compile Include="$(AssetsRoot)Scripts\Economy\**\*.cs" />
+    <Compile Include="$(AssetsRoot)Scripts\Core\**\*.cs" />
+    <Compile Include="$(AssetsRoot)Scripts\Copy\**\*.cs" />
+    <Compile Include="$(AssetsRoot)Scripts\Dialogue\**\*.cs" />
+    <Compile Include="$(AssetsRoot)Scripts\Scenarios\ScenarioOutcome.cs" Condition="Exists('$(AssetsRoot)Scripts\Scenarios\ScenarioOutcome.cs')" />
+    <Compile Include="UnityShim.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="Tests\*.cs" />
+    <Compile Include="Generated\*.cs" />
+  </ItemGroup>
+
+</Project>

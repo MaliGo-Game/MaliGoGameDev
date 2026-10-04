@@ -11,15 +11,36 @@ namespace MaliGo.Data
     [Serializable]
     public class Obligation
     {
+        // Values of `kind`.
+        public const string KindBill = "bill";
+        public const string KindInstalment = "instalment";
+        public const string KindLoan = "loan";
+        public const string KindCommitment = "commitment";
+
+        /// <summary>A cost that comes back each night (day bundles, the daily fare); shown and charged like an instalment.</summary>
+        public const string KindRepeat = "repeat";
+
         public string obligationId = "";
         public string label = "";
+
+        /// <summary>At most 10 characters, for the HUD pill: "Rent", "Airtime", "Speaker", "Bra K", ...</summary>
+        public string shortLabel = "";
+
+        /// <summary>The MoneyCategory used when it is charged.</summary>
+        public string category = "Bills";
+
+        /// <summary>"bill" | "instalment" | "loan" | "commitment" | "repeat".</summary>
+        public string kind = KindBill;
+
+        /// <summary>Day the scenario choice created it (0 for the base bills); feeds "New promise".</summary>
+        public int createdDay;
 
         /// <summary>Rand per payment.</summary>
         public float amount;
 
         public int intervalDays = 7;
 
-        /// <summary>In-game day the next payment falls due (PlayerData.currentDay).</summary>
+        /// <summary>In-game day the next payment falls due (PlayerData.currentDay); charged on that day's night.</summary>
         public int nextDueDay = 1;
 
         /// <summary>Payments left; -1 means it never ends (rent).</summary>

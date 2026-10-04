@@ -17,9 +17,15 @@ time, shifts worked, still owed + already promised going into payday. It then ch
                     (want=True) is exempt: its cost is going without the thing;
   * tightness     - the comfort path stays tight (it ends below the R1 000 start in every
                     profile, and comfort + loan has a night with something still owed in
-                    every profile); no path ends more than R600 up.
+                    every profile); no reference style ends more than R600 up.
   * random paths  - 3 000 random play-throughs per profile (random choices, random shift
                     decisions) never get stuck and never break the money invariant.
+  * hidden stress - reported, not checked: the highest hidden stress over every path the script
+                    plays (the six styles, a "stacked deferrals" path that keeps every shift, and
+                    the random play-throughs), and the highest on paths that work all 7 shifts and
+                    are never in arrears. Stacked deferrals reaching the stretched tone (60) is
+                    intended (spec section 0); the stacked-deferrals path is not a reference style
+                    and is not in the WP9 table.
 
 The content below mirrors spec section 3.4 (choices), 3.1 (schedules per profile) and 3.4.0
 (amounts per travel mode). If the spec changes, change this file in the same commit, rerun
@@ -120,11 +126,17 @@ def scenarios(travel):
             C("send_full", cash=-200, tag="Neutral"),
             C("send_part", cash=-80, stress=3, tag="Neutral", follow=("family_callback", 2)),
             C("from_savings", sav=-200, tag="Neutral"),
-            C("cant_this_week", stress=8, tag="Neutral", follow=("family_callback", 2)),
+            C("cant_this_week", stress=8, tag="Neutral", follow=("family_callback_full", 2)),
         ]},
         "family_callback": {"spot": "GATE", "need": True, "followup": True, "choices": [
             C("send_rest", cash=-120, tag="Neutral"),
             C("from_savings", sav=-120, tag="Neutral"),
+            C("not_this_week", stress=6, tag="Neutral", want=True),
+        ]},
+        # set off only by cant_this_week: the aunt asks the full R200 (spec 3.4.7b)
+        "family_callback_full": {"spot": "GATE", "need": True, "followup": True, "choices": [
+            C("send_full", cash=-200, tag="Neutral"),
+            C("from_savings", sav=-200, tag="Neutral"),
             C("not_this_week", stress=6, tag="Neutral", want=True),
         ]},
         "group_chat_contribution": {"spot": "CORNER", "need": False, "choices": [
@@ -193,7 +205,8 @@ SAVER = {
     "food_decision": ["skip_lunch"], "transport_decision": ["walk"], "data_runs_out": ["free_wifi"],
     "credit_bnpl": ["leave_it"], "impulse_purchase": ["to_savings", "walk_away"],
     "taxi_fare_rise": ["walk_today"], "family_obligation": ["cant_this_week"],
-    "family_callback": ["not_this_week"], "group_chat_contribution": ["not_this_time"],
+    "family_callback": ["not_this_week"], "family_callback_full": ["not_this_week"],
+    "group_chat_contribution": ["not_this_time"],
     "emergency_expense": ["from_savings"], "mashonisa_offer": ["not_today"],
     "stokvel_decision": ["join"], "windfall": ["all_to_savings"], "debit_order_check": ["cancel_gym"],
 }
@@ -214,6 +227,17 @@ COMFORT = {
     "debit_order_check": ["move_to_cash"],
 }
 COMFORT_LOAN = dict(COMFORT, mashonisa_offer=["borrow_400"])
+# Not a reference style (not in the WP9 table): puts off everything it can while keeping every
+# shift and every bill paid, to show how far stacked deferrals push hidden stress (spec section 0).
+DEFERRER = {
+    "food_decision": ["skip_lunch"], "transport_decision": ["walk"], "data_runs_out": ["day_bundle"],
+    "credit_bnpl": ["pay_later"], "impulse_purchase": ["walk_away"],
+    "taxi_fare_rise": ["walk_today", "pay_new_fare"], "family_obligation": ["cant_this_week"],
+    "family_callback": ["not_this_week"], "family_callback_full": ["not_this_week"],
+    "group_chat_contribution": ["not_this_time"], "emergency_expense": ["cold_showers"],
+    "mashonisa_offer": ["borrow_400"], "stokvel_decision": ["not_for_now"], "windfall": ["all_to_savings"],
+    "debit_order_check": ["leave_it"],
+}
 
 STYLES = [
     # name, preferences, works, keeps_shift (at the day's first scenario, avoid choices that leave < 60)
@@ -503,6 +527,7 @@ def first_day(focus):
         for sid in ids:
             out[sid] = d
     out["family_callback"] = out["family_obligation"] + 2
+    out["family_callback_full"] = out["family_obligation"] + 2
     return out
 
 
@@ -601,6 +626,30 @@ def main():
         if st.max_stress >= 60 and not st.arrears_nights and not lost_shift:
             failures.append("stress >= 60 without arrears or a lost shift: %s/%s %s" % (focus, travel, n))
 
+    # ---- hidden stress over every path played (reported; stacked deferrals reaching 60 is intended)
+    stress_all = max(st.max_stress for st in results.values())
+    stress_clean = 0          # paths that work all 7 shifts and are never in arrears
+    for st in results.values():
+        if st.shifts == CHAPTER_LENGTH and not st.arrears_nights:
+            stress_clean = max(stress_clean, st.max_stress)
+    defer_lines = []
+    for focus, travel in itertools.product(SPEND_FOCI, TRAVEL_MODES):
+        st = play(focus, travel, DEFERRER, True, True)
+        if st.stuck:
+            failures.append("stuck: %s/%s deferrer %s" % (focus, travel, st.stuck))
+        if not invariant_ok(st):
+            failures.append("invariant: %s/%s deferrer" % (focus, travel))
+        stress_all = max(stress_all, st.max_stress)
+        if st.shifts == CHAPTER_LENGTH and not st.arrears_nights:
+            stress_clean = max(stress_clean, st.max_stress)
+        defer_lines.append("%-22s max stress %3d, shifts %d, nights still owing %s" % (
+            focus + "/" + travel, st.max_stress, st.shifts, ",".join(map(str, st.arrears_nights)) or "-"))
+    if not args.brief:
+        print("Stacked deferrals (keeps every shift; not a reference style):")
+        for line in defer_lines:
+            print("  " + line)
+        print()
+
     # ---- fair choices inside scenarios
     for travel in TRAVEL_MODES:
         for focus in SPEND_FOCI:
@@ -634,7 +683,12 @@ def main():
                 break
             rnd_min = min(rnd_min, st.cash + st.sav)
             rnd_max = max(rnd_max, st.cash + st.sav)
+            stress_all = max(stress_all, st.max_stress)
+            if st.shifts == CHAPTER_LENGTH and not st.arrears_nights:
+                stress_clean = max(stress_clean, st.max_stress)
     print("Random play-throughs (3 000 per profile): end totals from R%d to R%d, none stuck." % (rnd_min, rnd_max))
+    print("Highest hidden stress over every path played: %d; on paths with all 7 shifts and no night owing: %d"
+          " (stretched tone at 60)." % (stress_all, stress_clean))
     print()
 
     if failures:

@@ -61,13 +61,13 @@ ask, don't invent.
 | Pay-later (speaker) | R120 now + 2 × R130, every 2 days (R380 in all, R20 more than paying R360 now) | content, §3.4 |
 | Day bundles | R15 now + R15 on each of the next 2 nights, never after Day 7 | content, §3.4.3 |
 | Travel amounts (by travel mode, §3.4.0) | Trip across town (usual way): taxi R30, e-hailing R44, on foot R30, car R36. Daily commute from the fare rise: R34 / R50 / R34 / R40, paid that day and every night to Day 7. Lift club R120 for every mode. Bounds every profile stays inside: trip R30–R50, daily R34–R50 | `ScenarioLibrary` (WP3), §3.4.0 |
-| Family follow-up | "Send R80 for now" or "Explain you can't this week" brings your aunt back 2 days later (only if that day ≤ 7), asking R120 | content, §3.4.7b |
+| Family follow-up | Your aunt calls back 2 days later (only if that day ≤ 7): after "Send R80 for now" she asks R120 (`family_callback`); after "Explain you can't this week" she asks the full R200 (`family_callback_full`) | content, §3.4.7b |
 | Bra K loan | R400 → 1 × R600, or R200 → 1 × R300, due 2 days later | content, §3.4 |
 | Payday commitments | Stokvel R200, Gym debit order R199, Geyser repair R350 (only after "cold showers"), all due Day 8 (never charged in the beta; shown as "Already promised for payday") | content, §3.4 |
 | Spending profile (two taps in character creation) | Focus: `food` / `transport` / `data_social` / `home_family`; travel: `taxi` / `ehailing` / `walk` / `car`. Default `food` + `taxi` = the generic chapter | `SpendingProfile` (§2.7) |
 | Bank transfer chips | R50, R100, R200, each direction | `BankRules.Amounts = {50,100,200}` |
 | XP per scenario choice | 5 (all choices); XP is never shown | content |
-| Hidden stress threshold for Mali's "stretched" tone | ≥ 60. In the Revision 3 simulation (`tools/sim_chapter.py`, every style × profile) it is reached only by paths that fall into arrears or lose shifts (the saver who skips lunch before work: 61–73; never works: 87–96); no path that keeps its shifts and pays its bills reaches 60. That is intended; don't tune it expecting otherwise | `ChapterConfig.StretchedStress = 60f` |
+| Hidden stress threshold for Mali's "stretched" tone | ≥ 60. In the Revision 3 simulation (`tools/sim_chapter.py`, every style × profile) the reference styles reach it only through arrears or lost shifts (the saver who skips lunch before work: 61–73; never works: 87–96). A player who keeps every shift and pays every bill can still reach it (up to 77) by stacking deferrals (e.g. skip lunch after the shift, day bundles, pay later, the new fare, can't this week then not this week either, not this time, cold showers, borrow R400 and repay it on night 7, leave the debit order: 77 with the `transport` focus, 70 with the other three foci, in every travel mode). That is intended: putting things off piles up worry. Don't tune it expecting otherwise; the script prints the highest hidden stress over every path it plays | `ChapterConfig.StretchedStress = 60f` |
 | Arrears stress | +10 on any night something is still owed (existing) | `ObligationDefaults.MissedPaymentStress` |
 | Save version | 2 (anything lower → fresh start). Revision 3 adds fields with initialisers and keeps 2: no version-2 save has ever shipped | `PlayerData.CurrentSaveVersion = 2` |
 | Interaction radius | 0.7 world units for locations and scenario spots; 0.74 for Mali | arbiter |
@@ -126,7 +126,7 @@ Start of Day 3 (profile Food and takeaways + Minibus taxi): Cash R655, Savings R
 5. Talk to Mali (optional): *"That's everything for today, {name}. Sleep at home when you're ready."*
 6. Home → Sleep → confirm: *End Day 3?* · *Tonight: Rent R500* · *Tonight: Day bundles R15* · [Not yet] [Sleep].
 7. Night: Rent R500 and Day bundles R15 are charged from cash (R771 → R256). Day 3 closes.
-8. Reveal: started **R1 055** *cash + savings*, rows `−R34 Taxi at the new fare` · `+R150 Shift at work` · `−R500 Rent` · `−R15 Day bundles`; ended **R656**; pill *"−R399 today"*; *"Cash R256 · Savings R400"*; *"New promise: Taxi R34 × 4, Days 4–7"*. Mali: *"Rent took the most today: R500. Tomorrow night, Speaker takes R130. You've got R256 in cash."* Coming up: *"Day 4 night: Speaker R130"* · *"Tomorrow: a call from home, and a group-chat birthday."* → **On to Day 4**.
+8. Reveal: started **R1 055** *cash + savings*, rows `−R34 Taxi at the new fare` · `+R150 Shift at work` · `−R500 Rent` · `−R15 Day bundles`; ended **R656**; pill *"−R399 today"*; *"Cash R256 · Savings R400"*; *"New promise: Taxi R34 × 4, Days 4–7"*. Mali: *"Rent took the most today: R500. Tomorrow night, Speaker takes R130. You've got R256 in cash."* Coming up: *"Day 4 night: Speaker R130"* · *"Tomorrow: a call from home, and a birthday."* → **On to Day 4**.
 
 A day takes about 2.5–4 minutes: 2 scenarios (≈ 30–40 s each incl. walking and reading), a shift (≈ 10 s), sleep + reveal (≈ 30 s), plus wandering; a family call-back (§3.4.7b) adds ≈ 30 s on the day it comes. The chapter takes about 20–30 minutes.
 
@@ -310,7 +310,9 @@ public static class ChapterConfig
 ```
 
 `ObligationDefaults` (changed): airtime = `{ id "airtime_data", label "Airtime", shortLabel "Airtime",
-amount 60, interval 7, nextDueDay 2, paymentsRemaining -1, category "Bills", kind "bill" }`; rent = `{ id "rent",
+amount 60, interval 7, nextDueDay 2, paymentsRemaining -1, category "Phone & data", kind "bill" }` (Phone &
+data, so N0's total for "Data, airtime and going out" includes the airtime the player named, §4.4; nothing
+else reads it: the bills line sums `bill:` events); rent = `{ id "rent",
 label "Rent", shortLabel "Rent", amount 500, interval 7, nextDueDay 3, -1, "Bills", "bill" }`. Due days are
 absolute (Day 2, Day 3), not "today + n". Keep `AddBaseObligations`, `AddObligation`, `MissedPaymentStress`.
 
@@ -548,7 +550,8 @@ Data: `Assets/MaliGo/Scenarios/ChapterSchedule.cs` (pure). The player's **focus*
 schedules. A scenario is **active** on day D if it is scheduled for a day ≤ D in that schedule (or is a
 follow-up whose day ≤ D, §3.4.7b) and not in `completedScenarioIds`. Unplayed scenarios carry over until
 played. The day can end without playing anything. **The first scenario listed for a day is that day's
-gate: the shift opens once it is resolved (A1, §7.3).** Carry-overs and follow-ups never gate.
+gate: the shift opens once it is resolved (A1, §7.3).** Carry-overs and follow-ups never gate, and
+today's gate always comes first in its spot's queue, ahead of any carry-over (§3.3).
 
 | Day | `food` (default) | `transport` | `data_social` | `home_family` | Night |
 |---|---|---|---|---|---|
@@ -588,18 +591,21 @@ every focus that has that list):
 
 **Reveal teasers** (shown the night before; keyed by the next day's list): data/speaker "Tomorrow: no
 data, and a deal at the phone shop." · fare/hoodie "Tomorrow: town costs more, and that hoodie again." ·
-family/group "Tomorrow: a call from home, and a group-chat birthday." · family/transport "Tomorrow: a
+family/group "Tomorrow: a call from home, and a birthday." · family/transport "Tomorrow: a
 call from home, and a trip across town." · geyser/group "Tomorrow: something at home, and the group
 chat." · geyser/Bra K "Tomorrow: something at home needs fixing." · transport/Bra K "Tomorrow: a trip
-across town, and Bra K wants a word." · stokvel/neighbour "Tomorrow: the stokvel, and a neighbour who
-owes you." · debit order "Tomorrow: the last day before payday." · after Day 7 "Tomorrow is payday." ·
-a follow-up due tomorrow: "Tomorrow: your aunt calls back." (§5.4.8 Coming up).
+across town, and Bra K wants a word." · stokvel/neighbour "Tomorrow: the stokvel, and your neighbour."
+· debit order "Tomorrow: the last day before payday." · after Day 7 "Tomorrow is payday." ·
+a follow-up due tomorrow (either call-back, §3.4.7b): "Tomorrow: your aunt calls back." (§5.4.8 Coming up).
 
-Fit rules (tested in `CopyTests` with `AileronMetrics`, for every focus): every morning line, with the
-stretched prefix "You seem stretched. " (§4.2.3) and a 16-character name, fits 2 lines of Body 40 SemiBold
-in the compact box's 960 u text area (tightest measured: stokvel 948 + 927 u, transport-first Day 1
-906 + 838 u); every teaser fits one line of Label 36 SemiBold in 940 u (longest: family/group 915 u,
-stokvel 911 u, transport/Bra K 887 u).
+Fit rules (tested in `CopyTests` with `AileronMetrics`, for every focus): every morning line, with a
+16-character name, fits 2 lines of Body 40 SemiBold in the compact box's 960 u text area; Days 2–7 are
+tested with the stretched prefix "You seem stretched. " (§4.2.3), Day 1 lines without it (the prefix can
+never show on Day 1's morning: `StartChapter` sets stress to 25 and nothing changes it before
+`DayStarted`), and the test name is "Mmmmmmmmmmmmmmmm" (the widest 16 characters). Tightest measured: Day 2
+with the prefix 958 + 625 u; stokvel 948 + 927 u; Day 1 transport-first 929 + 640 u. Every teaser fits one line of `Label` 36
+**Bold** (the Coming-up lines use the `Label` role, §5.1) in 940 u (longest: transport/Bra K 913 u,
+family/transport 871 u, geyser/group 871 u, fare/hoodie 870 u).
 
 `grocery_stokvel` and anything needing a stokvel pot or conditional fees is Chapter 2 (D15).
 
@@ -618,7 +624,8 @@ namespace MaliGo.Scenarios
         public static bool TryParseFollowUp(string key, out string scenarioId, out int day);
         /// Active = (scheduled on a day <= data.currentDay in this focus's schedule, or every scheduled scenario
         /// when useSchedule is false) or (a followUps key whose day <= currentDay), and not completed.
-        /// Order: by day, then position in the day; follow-ups after the scheduled scenarios of their day.
+        /// Order: today's gate (GateScenario(currentDay, focus)) first in its spot's queue, then by day, then
+        /// position in the day; follow-ups after the scheduled scenarios of their day.
         public static List<string> ActiveScenarioIds(PlayerData data, bool useSchedule, string focus, string[] followUps);
         public static string ActiveScenarioAtSpot(PlayerData data, string spotId, bool useSchedule, string focus,
                                                   string[] followUps);                // spot queue, §3.3
@@ -626,6 +633,8 @@ namespace MaliGo.Scenarios
         public static string TeaserForNight(int endedDay, string focus);              // teaser for endedDay + 1;
                                                                                       // "Tomorrow is payday." after 7
         public static string FollowUpTeaser(string scenarioId);                       // "Tomorrow: your aunt calls back."
+                                                                                      // (family_callback and
+                                                                                      // family_callback_full)
         public static string SpotFor(string scenarioId);                              // §3.3
         public static string SpotPlaceName(string spotId, string focus, string travel);   // "the kota shop", §3.3
         public static string SpotPlaceLabel(string spotId, string focus, string travel);  // "Kota shop", §3.3
@@ -659,7 +668,7 @@ speaker, the hoodie, the dinner, a second ask from family, the loan, the stokvel
 costs is going without it, which the card's label says. XP stays 5 on every choice and no card is marked.
 Checked by `tools/sim_chapter.py` and by `ContentTests` (WP3) for every travel mode. The decline ids are:
 `credit_bnpl/leave_it`, `impulse_purchase/walk_away`, `impulse_purchase/to_savings`,
-`family_callback/not_this_week`, `group_chat_contribution/not_this_time`, `mashonisa_offer/not_today`,
+`family_callback/not_this_week`, `family_callback_full/not_this_week`, `group_chat_contribution/not_this_time`, `mashonisa_offer/not_today`,
 `stokvel_decision/not_for_now`, `debit_order_check/cancel_gym`.
 
 **Reference play styles** (simulated with the content below by `tools/sim_chapter.py`; each day the
@@ -667,7 +676,7 @@ style resolves the day's first scenario, then works if it can, then plays the re
 
 | Style | Choices |
 |---|---|
-| Saver | the free option every time, even before the shift: skip lunch, walk, free Wi-Fi, leave the speaker, hoodie money to savings, walk today, can't this week (then not this week either), not this time, geyser from savings, no loan, join the stokvel, all to savings, cancel the gym |
+| Saver | the free option every time, even before the shift: skip lunch, walk, free Wi-Fi, leave the speaker, hoodie money to savings, walk today, can't this week (then not this week either when she calls back asking R200), not this time, geyser from savings, no loan, join the stokvel, all to savings, cancel the gym |
 | Always works | the saver's choices, except that the day's first choice never leaves less than 60 energy: there it takes the option that costs least over the week among those that keep the shift (vetkoek, day bundles, the lift club, the usual way across town) |
 | Middle | vetkoek, the usual way across town, day bundles, pay-later, walk away, the new fare, R80 to family (then R120 when she calls back), gift only, geyser from savings, no loan, join, half and half, leave the debit order |
 | Never works | the middle choices, never takes a shift |
@@ -675,7 +684,10 @@ style resolves the day's first scenario, then works if it can, then plays the re
 | Comfort + loan | as comfort, but borrow R400 on Day 5 |
 
 \* when unaffordable the style takes the next affordable option in its own list, then the first
-affordable one in authored order.
+affordable one in authored order. The script's own fallback lists are: saver `impulse_purchase` to_savings →
+walk_away; middle `family_callback` send_rest → from_savings and `emergency_expense` from_savings →
+from_cash (never works uses the middle lists); every other style and scenario lists one option. With
+today's content they give the same results as "first affordable in authored order".
 
 **Default profile** (`food` + `taxi`, the generic chapter). Start R1 000 (cash R600, savings R400):
 
@@ -722,15 +734,21 @@ What the simulation shows for all 16 profiles (rerun `python tools/sim_chapter.p
   some "Not now") never meet a scenario with nothing affordable and never break the invariant.
 - **No dominant style.** "Always works" has the best end total in every profile, but it is never best on
   everything: it goes without six wants, it leaves gogo's call-back unanswered (a follow-up), and in 12
-  of 16 profiles it also uses more energy than the middle path. Every other style is beaten on money.
+  of 16 profiles it also uses more choice energy (energy spent on choices only, not on shifts) than the
+  middle path. Every other style is beaten on money.
 - **The free option before work costs the shift.** The saver loses the shift on Days 1–3 (energy 55, 55,
   50 at shift time), is short on rent on the night of Day 3, and ends R401 below "always works", which
   pays R20 for lunch, R45 for day bundles and R120 for the lift club to keep its shifts.
 - **Money is tight on the comfort path and never trivially easy.** Comfort ends below R1 000 in every
   profile; comfort + loan has a night with something still owed in every profile; the home-and-family
   week (R200 to family on Day 1, two days before rent) is the hardest (comfort R205, comfort + loan R50
-  with R45 still owed); no style ends more than R255 up, and random play-throughs end at most R425 up.
-- **Hidden stress** reaches the stretched tone (60) only on paths with arrears or lost shifts (§0).
+  with R45 still owed); no style ends more than R255 up. The highest reachable end total is R1 605 (all
+  seven shifts, every free option after the shift, cold showers), with R550 already promised for payday;
+  random play-throughs ended at most R1 425.
+- **Hidden stress.** The reference styles reach the stretched tone (60) only through arrears or lost
+  shifts. A player who keeps every shift and pays every bill can still reach it, up to 77, by stacking
+  deferrals (§0); that is intended, since putting things off piles up worry. The script prints the
+  highest hidden stress over every path it plays (styles, a stacked-deferrals path and the random runs).
 
 ### 3.3 World positions (measured from `MaliGoWorld.unity`)
 
@@ -752,11 +770,11 @@ absolute position):
 
 | Spot id | Anchor + offset | World (x, z) | Scenarios (default `food` queue order) |
 |---|---|---|---|
-| `CORNER` | `Road_T_Intersection` + (0.6, 0, 1.2) | (0.6, 1.2) | food_decision, data_runs_out, group_chat_contribution |
+| `CORNER` | `Road_T_Intersection` + (0.6, 0, 1.2) | (0.6, 1.2) | food_decision, data_runs_out, group_chat_contribution (today's gate always first, see below) |
 | `TAXI` | `Road_Crossing` + (0.2, 0, −0.5) | (−1.8, −0.5) | transport_decision, taxi_fare_rise |
 | `HUB` | `Road_Connecting_End` + (0, 0, −0.4) | (0.0, 3.6) | credit_bnpl, stokvel_decision |
 | `SHOPFRONT` | `Road_Connecting_2` + (−1.5, 0, 1.1) | (−1.5, 3.1) | impulse_purchase |
-| `GATE` | `Player_House` + (−1.2, 0, 1.9) | (0.8, −0.3) | family_obligation, family_callback (follow-up), emergency_expense, debit_order_check |
+| `GATE` | `Player_House` + (−1.2, 0, 1.9) | (0.8, −0.3) | family_obligation, family_callback / family_callback_full (follow-ups), emergency_expense, debit_order_check |
 | `EAST` | `Road_Main_3` + (−0.4, 0, 0.9) | (2.6, 0.9) | mashonisa_offer, windfall |
 
 **Place names follow the profile (A3).** `SpotPlaceName` (Mali's greeting, prompts) / `SpotPlaceLabel`
@@ -782,9 +800,13 @@ bank (the transport spot's label follows the travel mode).
 Closest pairs among the nine fixed interactables: Home–GATE 1.50 (the minimum), CORNER–GATE 1.51,
 Work–EAST 1.52, HUB–SHOPFRONT 1.58; every pair ≥ 1.4 = 2 × radius 0.7. The player spawns 0.1 from Home,
 so the Home prompt shows on the first frame (intended, §1.1). **Spot queue rule:** a spot shows only the
-first active scenario in its queue order (the order of `ActiveScenarioIds`: schedule day, then position,
-follow-ups after the scheduled scenarios of their day, so the queue follows the player's focus); the next
-one appears when that is completed. So no two
+first active scenario in its queue order (the order of `ActiveScenarioIds`: **today's gate
+(`ChapterSchedule.GateScenario(currentDay, focus)`) is first in its spot's queue**, then schedule day, then
+position, then follow-ups after the scheduled scenarios of their day, so the queue follows the player's
+focus); the next one appears when that is completed. Gate first, because the Work prompt names the gate
+("Shift opens after …") and a carry-over at the same spot must not hide it (e.g. `food_decision` carried
+to Day 2 waits behind `data_runs_out` at CORNER; a Day 1 `transport_decision` waits behind Day 3's
+`taxi_fare_rise` at TAXI). So no two
 scenario prompts ever share a place, and the arbiter (§7.1) shows one prompt at a time anyway. WP5
 places the spots by these numbers; a person then walks to each spot in the Editor (human task H2, §10)
 and, if a collider blocks one, moves it ≤ 0.3 along the road and records the new offset here.
@@ -845,7 +867,7 @@ R34–R50; the lift club (R120), the private ride (R90) and the walking energy (
 
 #### 3.4.2 `transport_decision` — Day 1 (`food`, `transport`), Day 4 (`data_social`), Day 5 (`home_family`) · TAXI · `car` · Transport · gate noun "the trip across town"
 - Title: **Getting across town** · Place: "[Place]" · Prompt: "A trip across town"
-- Situation (`taxi`, `walk`): "You need to get to the other side of town and back today. The minibus taxi is R15 each way. You could walk it, or book a ride." · (`ehailing`): "You need to get to the other side of town and back today. A shared ride is R22 each way, a ride of your own R45. Or you could walk it." · (`car`): "You need to get to the other side of town and back today. Petrol for the trip is about R36. You could walk it, or book a ride."
+- Situation (`taxi`, `walk`): "You've got an interview on the other side of town today, off your usual route. The minibus taxi is R15 each way. You could walk it, or book a ride." · (`ehailing`): "You've got an interview on the other side of town today, off your usual route. A shared ride is R22 each way, a ride of your own R45. Or you could walk it." · (`car`): "You've got an interview on the other side of town today, off your usual route. Petrol for the trip is about R36. You could walk it, or book a ride." (147 / 155 / 147 characters, 5 lines each of Body 40 in 613 u.) The interview is off the course route, so it is a separate trip from the daily commute of §3.4.6 even when it comes after the fare rise (`data_social` Day 4, `home_family` Day 5).
 - Mali intro: "How are we getting there, {name}?"
 
 | id | Label | Ledger | Cash | Sav | Energy | Stress | Tag | Mali reaction |
@@ -856,7 +878,7 @@ R34–R50; the lift club (R120), the private ride (R90) and the walking energy (
 
 The Revision 2 ids `minibus_taxi` and `e_hailing` become `usual` and `ride`. Order per §3.4.0.
 
-#### 3.4.3 `data_runs_out` (new) — Day 2 · CORNER · `phone` · Phone & data · gate noun "your data"
+#### 3.4.3 `data_runs_out` (new) — Day 2 · CORNER · `phone` · Phone & data · gate noun "sorting your data" ("Shift opens after sorting your data", 640 u)
 - Title: **Out of data** · Place: "Your phone" · Prompt: "Your phone's out of data"
 - Situation: "Your data ran out this morning. You want to send a CV today and check for replies, and your next bundle only comes on payday."
 - Mali intro: "Your data's gone, {name}, and the CV is still sitting on your phone."
@@ -913,7 +935,7 @@ of that ("R130 × 2" in Later against −R360 now).
 | id | Label | Ledger | Cash | Sav | Energy | Stress | Tag | Instalments | Mali reaction |
 |---|---|---|---|---|---|---|---|---|---|
 | `pay_new_fare` | per §3.4.0 | per §3.4.0 | −[daily] | 0 | per §3.4.0 | 0 | Neutral | 4 × [daily], interval 1, firstDue 0 (= tomorrow), lastDue 7, label and short per §3.4.0, category Transport, kind repeat | `taxi`/`walk`: "R34 today, {name}. The fare comes off again on {laterDays}." · `ehailing`: "R50 today, {name}. The new price comes off again on {laterDays}." · `car`: "R40 today, {name}. Petrol comes off again on {laterDays}." · no later: "R[daily] today, {name}. That's the last trip before payday." |
-| `lift_club` | Join a lift club (R120 till payday) | Lift club till payday | −120 | 0 | 0 | −3 | Discretionary | — | "R120 for the lift club. Your trips are covered till payday." |
+| `lift_club` | Join a lift club (R120 till payday) | Lift club till payday | −120 | 0 | 0 | −3 | Discretionary | — | "R120 for the lift club. Your trips to the course are covered till payday." |
 | `walk_today` | `taxi`/`walk`: Walk today, taxi from tomorrow · `ehailing`: Walk today, ride from tomorrow · `car`: Walk today, drive from tomorrow | — | 0 | 0 | −50 | +2 | Frugal | same as `pay_new_fare` | "Nothing spent today. That walk took 50 energy, and it's R[daily] a day again from tomorrow." · no later: "Nothing spent today. That walk took 50 energy." |
 
 Transport is now a cost that comes back (A2, closes E7): from Day 3 the player is in town every day till
@@ -935,12 +957,20 @@ there is nothing later. `walk_to_main_road` and `walk_all_the_way` of Revision 2
 | `send_full` | Send R200 | R200 for gogo's meds | −200 | 0 | 0 | 0 | Neutral | — | "R200 is on its way to gogo. That's R200 of your week." |
 | `send_part` | Send R80 for now | R80 towards gogo's meds | −80 | 0 | 0 | +3 | Neutral | `family_callback` after 2 days, Later "Call back" | "R80 is on its way to gogo, {name}. Your aunt will call back about the rest." |
 | `from_savings` | Send R200 from savings | Gogo's meds, from savings | 0 | −200 | 0 | 0 | Neutral | — | "R200 from savings, and gogo has her meds. Savings is at R{savings} now." |
-| `cant_this_week` | Explain you can't this week | — | 0 | 0 | 0 | +8 | Neutral | `family_callback` after 2 days, Later "Call back" | "That's a hard call to make. Your aunt says she'll try you again in two days." |
+| `cant_this_week` | Explain you can't this week | — | 0 | 0 | 0 | +8 | Neutral | `family_callback_full` after 2 days, Later "Call back" | "That's a hard call to make. Your aunt says she'll try you again in two days." |
 
 A follow-up is only added if its day is ≤ 7 (chosen on Day 6 or 7, nothing comes back inside the chapter
 and the Later column shows "—"). Neither line asks the player to send more; the call-back simply happens.
 
-#### 3.4.7b `family_callback` (new, follow-up only) — 2 days after `send_part` or `cant_this_week` · GATE · `token_give` · Family · `isFollowUp = true`
+#### 3.4.7b `family_callback` and `family_callback_full` (new, follow-ups only) · GATE · `token_give` · Family · `isFollowUp = true`
+
+Two follow-ups, so that the call-back asks for what is still missing: `family_callback` comes 2 days after
+`send_part` (R80 sent, she asks the other R120); `family_callback_full` comes 2 days after
+`cant_this_week` (nothing sent, she asks the full R200). With one shared R120 call-back, "can't this week,
+then R120" cost R120 and "R80 now, then R120" cost R200 for the same ending, so the card made
+`cant_this_week` at least as good as `send_part` (A2).
+
+**`family_callback`** — 2 days after `send_part`
 - Title: **Your aunt calls back** · Place: "At home" · Prompt: "Your aunt's calling back"
 - Situation: "Your aunt again. Gogo's meds are running low, and the clinic still has none. R120 would see her through to month-end."
 - Mali intro: "It's your aunt again, {name}."
@@ -952,7 +982,20 @@ and the Later column shows "—"). Neither line asks the player to send more; th
 | `from_savings` | Send R120 from savings | Gogo's meds, from savings | 0 | −120 | 0 | 0 | Neutral | "R120 from savings, and gogo's covered. Savings is at R{savings} now." |
 | `not_this_week` | Not this week either | — | 0 | 0 | 0 | +6 | Neutral | "That's a hard one to say twice. Your week stays as it was." |
 
-It sets off nothing further. The follow-up mechanic is data only: a choice names `followUpScenarioId`
+**`family_callback_full`** — 2 days after `cant_this_week`; the same title, place, prompt, Mali intro and
+Coming-up line as `family_callback`
+- Situation: "Your aunt again. Gogo's meds are running low, and the clinic still has none. R200 would see her through to month-end." (612 + 556 + 549 + 416 u, 4 lines in 613 u)
+
+| id | Label | Ledger | Cash | Sav | Energy | Stress | Tag | Mali reaction |
+|---|---|---|---|---|---|---|---|---|
+| `send_full` | Send R200 | R200 for gogo's meds | −200 | 0 | 0 | 0 | Neutral | "R200 is on its way, and gogo's covered till month-end." |
+| `from_savings` | Send R200 from savings | Gogo's meds, from savings | 0 | −200 | 0 | 0 | Neutral | "R200 from savings, and gogo's covered. Savings is at R{savings} now." |
+| `not_this_week` | Not this week either | — | 0 | 0 | 0 | +6 | Neutral | "That's a hard one to say twice. Your week stays as it was." |
+
+No reference style pays after `cant_this_week` (the saver and "always works" answer "not this week
+either"), so the §3.2 totals are unchanged.
+
+Neither follow-up sets off anything further. The follow-up mechanic is data only: a choice names `followUpScenarioId`
 and `followUpAfterDays`; `ScenarioOutcome.Apply` appends `ChapterSchedule.FollowUpKey(id, currentDay +
 n)` to `PlayerData.followUps` when that day is ≤ 7; `ChapterSchedule.ActiveScenarioIds` makes it active
 on that day at its spot (§3.3 queue). Owners: fields WP3, apply WP6, activation WP3, Later column WP6.
@@ -1058,7 +1101,7 @@ stokvel options, every windfall option, cancel the gym and leave it.
 | Speaker | Pay later | Later "R130 × 2": R20 more than paying in full |
 | Fare rise | Walk today | 50 energy (costs Day 3's shift) and Later "R34 × 4" |
 | | Lift club | the most cash today (R120) |
-| Call from home | Can't / R80 for now | Later "Call back": your aunt calls again in two days |
+| Call from home | Can't / R80 for now | Later "Call back": your aunt calls again in two days, asking R200 after "can't", R120 after R80 |
 | Geyser | Cold showers | Later "R350 on payday" |
 | Bra K | Not today | nothing: borrowing is the costly side (Later R600 / R300) |
 | Hoodie, dinner, stokvel, gym, second call | Declining | going without it (the card's label) |
@@ -1458,7 +1501,7 @@ Anchors are relative to the safe-area root. "safeWidth" = width of the safe root
 |---|---|---|---|
 | Row | top, 24 u below safe top; left group from x = 24, right group ends at safeWidth − 24 | pills 112 tall, gaps 16 | no background behind the row |
 | Day pill | left 1 | 328 × 112, no icon (text 280) | line 1 "Day 3 of 7" Bold 40 `TextOnInverse` (185 u); line 2 "Payday in 5 days" / "Payday tomorrow" Caption `TextOnInverseMuted` (245 / 260 u) |
-| **Today pill** (A4) | directly under the Day pill: x = 24, top 152 u below the safe top (24 + 112 + 16) | 328 × 112, no icon (text 280) | from `HudCopy.TodayPill(data)` (pure, §7.4). Line 1 "Today from R{start}" Caption `TextOnInverseMuted` ("Today from R9 999" = 279 u), start = `data.today.StartTotal` (cash + savings when the day opened); line 2 `arrowRight` sprite 36 u tinted `TextOnInverse` + 10 gap + "R{now}" HudValue `TextOnInverse` (now = cash + savings; "R9 999" = 154 u, so 200 u). Counts over `Count` like the other values. It says "Today: started R1 000 → now R___" in two short lines, and it is the same pair of numbers the reveal shows that night |
+| **Today pill** (A4) | directly under the Day pill: x = 24, top 152 u below the safe top (24 + 112 + 16) | 328 × 112, no icon (text 280) | from `HudCopy.TodayPill(data)` (pure, §7.4). Line 1 "Today from R{start}" Caption `TextOnInverseMuted` ("Today from R9 999" = 279 u), start = `data.today.StartTotal` (cash + savings when the day opened); line 2 `arrowRight` sprite 36 u tinted `TextOnInverse` + 10 gap + "R{now}" HudValue `TextOnInverse` (now = cash + savings; "R9 999" = 154 u, so 200 u). Counts over `Count` like the other values. It says "Today: started R1 000 → now R___" in two short lines. Line 1 is the number the reveal starts from. The reveal's end is line 2 minus whatever the night charges (the sleep confirm lists it) |
 | Cash pill | left 2 | 280 × 112 | icon `coin` 56 u tinted `Coin` at x 24; text from x 96 (160 u): "Cash" Caption muted; value HudValue `TextOnInverse` ("R1 315" = 154 u) |
 | Savings pill | left 3 | 392 × 112 | icon `pouch` 56; text from x 96 (272 u): line 1 "Savings" + right-aligned "of R2 000" (Caption muted; 117 + 140 u); line 2 value HudValue (154 u) + 16 gap + progress bar 102 × 12 (`Coin` on 25% cream) = savings / target |
 | Energy pill | right 3 | 300 × 112 | procedural bolt 56; text from x 96 (180 u): "Energy" Caption; bar 80 × 14 (`Coin` on 25% cream) + 12 gap + number HudValue ("100" = 87 u) |
@@ -1669,10 +1712,11 @@ geyser comes first because it is Day 5's first scenario and opens the shift.)
   `MoneyTransfer`, not `MoneyIn`, and the label gets " · R{repay} back Day {due}" from the matching
   obligation (or from the choice's instalment fields if the obligation is already gone). At most 7 rows;
   if more, rows 1–6 then "Other ({n})" with the summed total of the rest. Empty: Caption "Nothing moved
-  today." Then 20 gap, "Coming up" Label Bold (44) and up to 2 lines Label 36 (88), the first two that
+  today." Then 20 gap, "Coming up" Label Bold (44) and up to 2 lines `Label` 36 **Bold** (the role's
+  weight, §5.1; each one line in 940 u, §3.1) (88), the first two that
   exist of: the first item of `ObligationLedger.DueOnNight(data, day + 1)` ("Day {n} night: {shortLabel}
-  R{amt}"); `ChapterSchedule.FollowUpTeaser(id)` for a follow-up due on day + 1 ("Tomorrow: your aunt calls
-  back."); the teaser (§3.1). Built by `RevealLineBuilder.ComingUp` (WP7). Total ≤ 686 of 696.
+  R{amt}"); `ChapterSchedule.FollowUpTeaser(id)` for a follow-up due on day + 1 (either call-back: "Tomorrow: your
+  aunt calls back."); the teaser (§3.1). Built by `RevealLineBuilder.ComingUp` (WP7). Total ≤ 686 of 696.
 - Bottom band: Mali portrait 160, gold tag, line (Body 40, ≤ 3 lines, width = band − 160 − 24 − 440;
   overflow per §4.3) typing at the text speed; primary button "On to Day {n}" / "On to payday" 400 × 144
   at the right.
@@ -1852,7 +1896,7 @@ the app icon (A5, closes E4). It is brand art, not CC0, so it stays out of any a
 
 | Output | Source | Preparation |
 |---|---|---|
-| `Assets/Resources/MaliGo/Mali/MaliPortrait.png` | `mali2.png` from the React Native app's `assets/images/` (534 × 615 RGBA). An identical copy (MD5 `09c1e7891c32a254d60a32d528337a47`) is at `C:\Users\0geda\Desktop\Fourth Year\Other Things\Projects\Done\MaliGo\mali2.png`; verify the MD5 before use. | Alpha is clean (body alpha 254). Crop the alpha bbox (93, 63)–(433, 536) padded 16 px → (77, 47)–(449, 552) (372 × 505); scale uniformly to 512 tall (377 × 512, Lanczos); paste centred horizontally, bottom-aligned, on a 512 × 512 transparent canvas. |
+| `Assets/Resources/MaliGo/Mali/MaliPortrait.png` | `mali2.png` from the React Native app's `assets/images/` (534 × 615 RGBA), or a local copy of `mali2.png` (MD5 `09c1e7891c32a254d60a32d528337a47`); verify the MD5 before use. | Alpha is clean (body alpha 254). Crop the alpha bbox (93, 63)–(433, 536) padded 16 px → (77, 47)–(449, 552) (372 × 505); scale uniformly to 512 tall (377 × 512, Lanczos); paste centred horizontally, bottom-aligned, on a 512 × 512 transparent canvas. |
 | `Assets/Resources/MaliGo/Mali/MaliWave.png` | `Assets/MaliGo Pitch Deck.png` (779 × 779 RGBA, full-body wave) | Crop alpha bbox (168, 75)–(620, 683) padded 16 → (152, 59)–(636, 699) = 484 × 640; paste centred on a 512 × 640 transparent canvas. The original file stays where it is (it is not under Resources, so it never ships). |
 | — | `Assets/Mali Dumbfound.png` | **Not used** (mirrored "R" on the coin). |
 
@@ -2374,7 +2418,7 @@ use it (via `UiCanvasFactory.Create`).
   save from a handler (§2.4); null-safe when `PlayerDataManager.Instance` is missing; modal views follow
   §7.2 (push from `Start` at the earliest, `Pop` in `OnDisable` and `OnDestroy`).
 - Build agents cannot run the Unity Editor (8 GB laptop, MASTER §2/§10). Acceptance is compile + logic
-  tests + inspection; anything that needs Play mode or a phone is a human task in §10 (H1–H6).
+  tests + inspection; anything that needs Play mode or a phone is a human task in §10 (H1–H8).
 - Merge order inside a stage does not matter, except that WP2 is merged before WP4's audio files are
   staged (Git LFS, §6).
 
@@ -2408,7 +2452,8 @@ use it (via `UiCanvasFactory.Create`).
   {LogicTests.csproj,UnityShim.cs,Program.cs,Tests/CoreTests.cs}` and an empty `tools/logic_tests/Generated/`
   (`.gitkeep`).
 - Modifies: `Assets/MaliGo/Data/{PlayerData,FinancialGoal,Obligation,ObligationDefaults}.cs` (incl.
-  `spendingProfile`, `followUps`, the "repeat" kind and the airtime label "Airtime"),
+  `spendingProfile`, `followUps`, the "repeat" kind, the airtime label "Airtime" and the airtime category
+  "Phone & data"; rent stays "Bills"),
   `Assets/Scripts/Economy/ObligationLedger.cs` (recorder call + §2.4 helpers),
   `Assets/Scripts/PlayerIdentity/PlayerDataManager.cs` (`ShouldReset` in `TryLoad`, atomic write, `.bak`,
   pause/quit save, `FlushMoneyChanged` after the save, `WasResetForUpdate`, `DeleteSave`), `.gitignore`
@@ -2487,12 +2532,12 @@ use it (via `UiCanvasFactory.Create`).
   `WorkRules.State` and `Obligation.shortLabel`, which a stage-1 package cannot use.)
 - Exposes: new fields (§3.4, incl. `gateNoun`, `isFollowUp`, `instalmentLastDueDay`, `maliReactionNoLater`,
   `followUpScenarioId`, `followUpAfterDays`, `followUpLaterText`) with defaults (`instalmentIntervalDays = 2`,
-  others empty/0/false); ids as `ScenarioLibrary` constants for all 14 scenarios (13 scheduled + the
-  follow-up); `ScenarioLibrary.Get(id, focus, travel)` (§3.4.0 variants, place names), `GetById`, `AllIds`;
+  others empty/0/false); ids as `ScenarioLibrary` constants for all 15 scenarios (13 scheduled + the
+  2 follow-ups, `family_callback` and `family_callback_full`); `ScenarioLibrary.Get(id, focus, travel)` (§3.4.0 variants, place names), `GetById`, `AllIds`;
   §3.1 `ChapterSchedule` with the Revision 3 signatures (profile and follow-ups as plain arguments).
 - Consumes: only existing types (no WP1 types; uses literal category strings from §2.2, literal 7/8, and
   writes out the focus/travel ids and their defaults itself).
-- Tests (`ContentTests`): 14 scenarios; 2–4 choices each; every choice xp = 5; always-available rule;
+- Tests (`ContentTests`): 15 scenarios; 2–4 choices each; every choice xp = 5; always-available rule;
   schedule lists each id exactly once; spot queues match §3.3; all strings pass the glyph whitelist; the
   full §4.3 banned list absent from every reaction, intro, situation, morning line, greeting and every
   `MaliDialogueLibrary.AllEntries` line; `MaliDialogueLibrary.AllEntries` has exactly one entry; ledger
@@ -2500,7 +2545,9 @@ use it (via `UiCanvasFactory.Create`).
   reactions ≤ 150 (cheap guards; the real fit tests with font metrics are in WP6/WP7); `{name}` in at most
   one reaction per scenario; only known tokens; categories are §2.2 strings. **Every profile option
   (Revision 3):** for each of the 4 foci: the 13 scheduled ids each appear exactly once over Days 1–7 and
-  `family_callback` never; Day 2 starts with `data_runs_out`, Day 3 with `taxi_fare_rise`,
+  `family_callback`/`family_callback_full` never; `send_part` names `family_callback` and `cant_this_week`
+  names `family_callback_full`; **gate first in the spot queue (§3.3):** with `food_decision` carried to
+  Day 2, `ActiveScenarioAtSpot(CORNER)` = `data_runs_out`; Day 2 starts with `data_runs_out`, Day 3 with `taxi_fare_rise`,
   `mashonisa_offer` is on Day 5 and Day 7 is `debit_order_check` alone; the gates of Days 1–3 are needs
   with a free option using ≥ 45 energy; `MorningLine` and `TeaserForNight` exist for Days 1–7; each focus's
   Day 1 holds its own scenario (food, transport, group chat, family). For each of the 4 travel modes:
@@ -2589,8 +2636,8 @@ use it (via `UiCanvasFactory.Create`).
   day gives the §3.4/§3.4.0 deltas; `LaterDays`: day bundles chosen Day 2 → [3, 4], Day 6 → [7], Day 7 →
   [] (no obligation, `ReactionFor` = the no-later line); the fare chosen Day 3 → [4, 5, 6, 7] ("Days 4 to
   7", Later small line "Days 4–7"), Day 5 → [6, 7]; pay-later chosen Day 2 → R130 on Days 4 and 6;
-  `send_part`/`cant_this_week` on Day 4 add "family_callback@6", on Day 6 add nothing (Later "—");
-  `family_callback` sets off nothing; Later column text for a follow-up is "Call back" / "on Day 6"; the
+  `send_part` on Day 4 adds "family_callback@6" and `cant_this_week` on Day 4 adds
+  "family_callback_full@6"; on Day 6 either adds nothing (Later "—"); neither follow-up sets off anything; Later column text for a follow-up is "Call back" / "on Day 6"; the
   greeting gives the NotYet suffix before the gate and not after; the fits above for every profile
   variant (labels, situations, reactions with `{laterDays}` = "Days 4 to 7"), and every scenario prompt
   of every profile ≤ 776 u (Body 40 Bold, §5.4.2).
@@ -2615,11 +2662,12 @@ use it (via `UiCanvasFactory.Create`).
   or more than 3 noticed lines; banned words absent; top-3 holds only `scenario:` events and excludes
   transfers; the bills line sums `bill:` events; `Build` gives the same line for a fresh `NightResult` and
   for `DayCycle.Rebuild` of the same night; **fit with `AileronMetrics`**: every `HudCopy` string (amounts
-  up to R9 999, every shortLabel) in its §5.4.1 width, every morning line (stretched prefix, 16-char name)
-  in 2 lines of 960 u, every teaser in one line of 940 u, the reveal's still-owed and new-promise lines in
+  up to R9 999, every shortLabel) in its §5.4.1 width, every morning line (name "Mmmmmmmmmmmmmmmm", the widest 16
+  characters; Days 2–7 with the stretched prefix, Day 1 without it, §3.1) in 2 lines of 960 u, every
+  teaser and every Coming-up line in one line of `Label` 36 Bold in 940 u, the reveal's still-owed and new-promise lines in
   the left column, the chapter-end bills line in 704 u. **Revision 3:** `TodayPill` gives "Today from
   R1 000" / "R1 100" for a Day-1 state after +R100, and line 1 fits 280 u up to R9 999; `ComingUp` puts
-  "Tomorrow: your aunt calls back." second when a follow-up is due tomorrow and the teaser otherwise; N0
+  "Tomorrow: your aunt calls back." second when either follow-up is due tomorrow and the teaser otherwise; N0
   fires for each of the four foci with the right categories and amount (e.g. `transport` middle path
   R200), and never when `source` is `default`; morning lines and teasers of **every focus** fit (above);
   "Shift opens after {gate}" for every `gateNoun` fits 776 u (Body 40 Bold) and the NotYet Mali line fits 2
@@ -2708,7 +2756,7 @@ Gaps
 10. **Goal model** → §2.1/§2.3: one player-chosen preset; target for savings; goal pot retired; Bank = transfers.
 11. **Character creation vs fixed Chapter 1** → §4.6: promise and name, look, two spending-profile taps (Revision 3), goal, Mali; life stage stays default in data.
 12. **Pacing vs geography** → §3.3 measured positions, ≥ 1.4 spacing, spot queues; walking is < 3 s between any two places; a day ≈ 2.5–4 min, the chapter ≈ 20–30 min (§1.2).
-13. **Scoping new logic** → beta: instalments with absolute first due day (stokvel, gym), instalments capped at Day 7 (fares, day bundles), loans, carry-over schedule, one data-driven follow-up scenario (Revision 3), the spending profile from two taps (Revision 3). Later (Chapter 2): stokvel/grocery pot, conditional fees, cash-gated offers (mashonisa is always offered), dated calendar (HUD uses "Day N of 7"), free-text or adjustable plan amounts (presets only), Mali remembering specific earlier choices beyond the morning lines, reaction tokens and the plan quote.
+13. **Scoping new logic** → beta: instalments with absolute first due day (stokvel, gym), instalments capped at Day 7 (fares, day bundles), loans, carry-over schedule, a data-driven follow-up mechanic with two call-back scenarios (Revision 3, 3a), the spending profile from two taps (Revision 3). Later (Chapter 2): stokvel/grocery pot, conditional fees, cash-gated offers (mashonisa is always offered), dated calendar (HUD uses "Day N of 7"), free-text or adjustable plan amounts (presets only), Mali remembering specific earlier choices beyond the morning lines, reaction tokens and the plan quote.
 14. **Feature flags** → §7.12 `MaliGoFeatures`.
 15. **Reflection copy authoring** → §4.3 (A/B rules), §4.4 (N rules + fallbacks), §4.2 greetings; tested in `CopyTests`/`ContentTests`.
 16. **Icons and glyphs** → §5.2 fontTools results; every missing glyph replaced by a named sprite (§6.2) or procedural shape. `LegacyRuntime.ttf` is built into Unity and not on disk to check; it is only a fallback and the same whitelist applies.
@@ -2723,7 +2771,7 @@ Contradictions
 3. **Font** → Aileron (CC0), plain-space grouping, U+2212 verified present.
 4. **Procedural vs Kenney panels** → procedural; no Kenney panel/button PNGs imported.
 5. **Reveal colour and glyphs** → ui-ux tokens (in green, out warm brown, transfer neutral, delta pill neutral), arrows as sprites (not glyphs), sentence case, no all-caps header.
-6. **HUD content** → D9 list (§5.4.1): Day N of 7 + payday, Cash, Savings with goal progress, Energy, next bill, Pause.
+6. **HUD content** → D9 list (§5.4.1): Day N of 7 + payday, the Today pill under it (A4), Cash, Savings with goal progress, Energy, next bill, Pause.
 7. **Mock-up numbers** → every number in this spec comes from §0/§3; the ui-ux mock-ups (R350 shift, R1 200 rent, phone bill, "Eat at home") are not used.
 8. **Bill timing off by one** → D6: due Day N = charged on the night ending Day N (settle before incrementing). Airtime night 2, rent night 3.
 9. **Safe area approach** → `SafeAreaFitter` on every canvas reacting to changes; `androidRenderOutsideSafeArea` unchanged.
@@ -2777,16 +2825,20 @@ E7. **Closed (Revision 3, A2, "visible cost").** Every cheap option now pays som
 
 ### Human tasks (agents cannot do these: no Editor alongside other work, no phone)
 
-| # | Who | Task | Needed before |
-|---|---|---|---|
-| H1 | Ubayd or Jaswin | Audition all seven §6.4 clips on headphones and on the phone speaker; say whether `music_calm` loops cleanly (if it does, music may use `loop = true`, §7.11) and whether the township bed sounds right (was E3) | APK to testers |
-| H2 | Ubayd or Jaswin | Editor play-through on the founder's laptop: walk to each of the six spots, Home, Bank and Work (§3.3; if a collider blocks one, move it ≤ 0.3 along the road and record the offset in §3.3); the §1.1–1.3 checklist at 1920×1080, 2400×1080 and 1600×720 with a simulated cutout on each side; kill the app after sleeping and reopen (the pending reveal shows, identical); reopen on Day 1 of a replay (no second plan quote or jingle); Start over and Live the week again (the game stays playable: prompts, joystick, movement) | APK to testers |
-| H3 | Ubayd or Jaswin | Look at `tools/out/skin_preview.png` and the six looks in the CC preview: the three tones read as light/medium/deep brown and no clothing colour changed | APK to testers |
-| H4 | Founder | Build report from the headless build: APK size, size of the audio inside the APK (Unity re-encodes to Vorbis q0.5), build time, and the `Splash shown:` log line | APK to testers |
-| H5 | Ubayd or Jaswin | On an Android 16 phone: the back key opens/closes Pause and closes sheets (targetSdk 36, predictive back off; if not, pin targetSdk 35, §7.13); music and ambience crossfade without stutter (Streaming clips on two sources) | APK to testers |
-| H6 | Ubayd or Jaswin | On the phone: Aileron renders in CC, HUD, sheets and the reveal (no boxes; `−` and `·` visible); logcat shows no `UiFonts` fallback warning; text is readable at arm's length on the smallest test phone | APK to testers |
-| H7 | Founder | Read the family call (§3.4.7), the call-back (§3.4.7b) and Bra K (§3.4.10) as a player would, for tone (was E5) | APK to testers |
-| H8 | Ubayd or Jaswin | Play the first two days with two different profile picks (e.g. Food + Minibus taxi, Home and family + E-hailing): the places, the Day 1 order, the travel amounts and the CC summary line change as §2.7 says; the Work prompt reads "Shift opens after …" until the day's first scenario is done; the HUD Today pill matches the reveal's start and end totals | APK to testers |
+One owner per task. **Order:** H2, H3 (step 1, the Editor on the founder's laptop) → H4 (step 2, the
+founder builds the APK) → H1, H5, H6, H8 (step 3, on a phone with that APK) → H7 (step 4) → APK to
+testers. Ubayd owns the Editor work, Jaswin the phone work, the founder the build and the tone read.
+
+| # | Order | Owner | Task | Needed before |
+|---|---|---|---|---|
+| H1 | 3 | Jaswin | Audition all seven §6.4 clips on headphones and on the phone speaker; say whether `music_calm` loops cleanly (if it does, music may use `loop = true`, §7.11) and whether the township bed sounds right (was E3) | APK to testers |
+| H2 | 1 | Ubayd | Editor play-through on the founder's laptop: walk to each of the six spots, Home, Bank and Work (§3.3; if a collider blocks one, move it ≤ 0.3 along the road and record the offset in §3.3); the §1.1–1.3 checklist at 1920×1080, 2400×1080 and 1600×720 with a simulated cutout on each side; kill the app after sleeping and reopen (the pending reveal shows, identical); reopen on Day 1 of a replay (no second plan quote or jingle); Start over and Live the week again (the game stays playable: prompts, joystick, movement) | APK to testers |
+| H3 | 1 | Ubayd | Look at `tools/out/skin_preview.png` and the six looks in the CC preview: the three tones read as light/medium/deep brown and no clothing colour changed | APK to testers |
+| H4 | 2 | Founder | Build the APK for steps 3–4 and report from the headless build: APK size, size of the audio inside the APK (Unity re-encodes to Vorbis q0.5), build time, and the `Splash shown:` log line | APK to testers |
+| H5 | 3 | Jaswin (needs an Android 16 phone; if Jaswin has none, it goes to whoever has one) | On an Android 16 phone: the back key opens/closes Pause and closes sheets (targetSdk 36, predictive back off; if not, pin targetSdk 35, §7.13); music and ambience crossfade without stutter (Streaming clips on two sources) | APK to testers |
+| H6 | 3 | Jaswin | On the phone: Aileron renders in CC, HUD, sheets and the reveal (no boxes; `−` and `·` visible); logcat shows no `UiFonts` fallback warning; text is readable at arm's length on the smallest test phone | APK to testers |
+| H7 | 4 | Founder | Read the family call (§3.4.7), both call-backs (§3.4.7b) and Bra K (§3.4.10) as a player would, for tone (was E5) | APK to testers |
+| H8 | 3 | Jaswin | Play the first two days with two different profile picks (e.g. Food + Minibus taxi, Home and family + E-hailing): the places, the Day 1 order, the travel amounts and the CC summary line change as §2.7 says; the Work prompt reads "Shift opens after …" until the day's first scenario is done; the Today pill's "from" equals the reveal's start, and its bedtime total minus the sleep confirm's "Tonight" items equals the reveal's end | APK to testers |
 
 ---
 
@@ -2907,6 +2959,28 @@ Aileron fonts, the same method as Revision 2.
 | R3-2 | Small fixes found while re-measuring | "R60 · tomorrow" measures 245 u, not 224 u (still fits 292 u); "from Day 5" measures 159 u, over the old 155 u small-line rule, so the rule is now "fits its Later column" (200/190 u); the chapter can now charge up to R1 650 and the bills line still measures 554 u |
 | R3-3 | Reference totals | §3.2 tables replace the Revision 2 paths (1 440 / 1 290 / 851 / 505 / 305). Default profile: saver 854, always works 1 255, middle 545, never works 350, comfort 615, comfort + loan 415; WP9 locks all 96 totals. §1.2, §1.3, §5.4.1, §5.4.8 and §5.4.9 examples recomputed from the middle path |
 
+### Revision 3a (independent verification of Revision 3)
+
+An independent verifier re-simulated the chapter from the spec text (all 96 totals agreed) and found 11
+important issues. All are fixed below; the 96 reference totals are unchanged (`tools/sim_chapter.py`
+re-run, exit 0, table identical) and every changed string was re-measured with fontTools on the staged
+Aileron fonts, the same method as before.
+
+| # | Finding | Outcome |
+|---|---|---|
+| I1 | Human tasks had no single owner ("Ubayd or Jaswin") and no order; §8 said "(H1–H6)" | **Fixed.** §10: one owner per task (Ubayd H2, H3; Jaswin H1, H5, H6, H8, with H5 going to whoever has an Android 16 phone; founder H4, H7) and an Order column: H2, H3 → H4 (founder builds the APK) → H1, H5, H6, H8 on a phone with that APK → H7 → APK to testers. §8 now says "(H1–H8)" |
+| I2 | The Today pill was said to match the reveal's start and end, which is false on any night with a bill | **Fixed.** §5.4.1: line 1 is the reveal's start; the reveal's end is line 2 minus the night's charges (listed by the sleep confirm). §10 H8 reworded the same way |
+| I3 | A carried-over scenario at the same spot could hide today's gate, while the Work prompt named it | **Fixed.** §3.3 spot-queue rule and §3.1 (`ActiveScenarioIds` order): today's gate is first in its spot's queue, then schedule day, position, follow-ups. WP3 `ContentTests`: with `food_decision` carried to Day 2, `ActiveScenarioAtSpot(CORNER)` = `data_runs_out`. Totals unchanged (the script already plays the gate first) |
+| I4 | "Can't this week" then R120 cost less than "R80 now" then R120 for the same ending | **Fixed.** §3.4.7/§3.4.7b: new follow-up `family_callback_full` (set off only by `cant_this_week`, asks R200: send R200 / R200 from savings / not this week either; situation 612 + 556 + 549 + 416 u in 613 u); `family_callback` (R120) stays for `send_part`. §0 family row, §3.2 decline ids, §3.3 GATE queue, WP3 counts (15 = 13 scheduled + 2 follow-ups), WP6/WP7 tests, `FollowUpTeaser` (either call-back), `tools/sim_chapter.py` |
+| I5 | The lift club "covers your trips till payday", but a later trip across town still charged | **Fixed.** §3.4.6 lift club reaction "…Your trips to the course are covered till payday." (1 008 + 412 u); §3.4.2 situation now starts "You've got an interview on the other side of town today, off your usual route." (147 / 155 / 147 characters, 5 lines each in 613 u) |
+| I6 | "No path that keeps its shifts and pays its bills reaches 60" was false (stacked deferrals reach 70–77) | **Fixed (accepted as intended).** §0 and §3.2 reworded: the reference styles reach 60 only through arrears or lost shifts; a player who keeps every shift and pays every bill can reach up to 77 by stacking deferrals, which is intended. `tools/sim_chapter.py` now plays a stacked-deferrals path per profile (not a reference style) and prints the highest hidden stress over every path it plays, random runs included (100 overall; 77 on paths with all 7 shifts and no night owing) |
+| I7 | "Random play-throughs end at most R425 up" read as a ceiling | **Fixed.** §3.2: the highest reachable end total is R1 605 (with R550 already promised for payday); random play-throughs ended at most R1 425 |
+| I8 | Coming-up lines use `Label` (Bold 36) but the fit rule measured SemiBold; the family/group teaser was 941.9 u of 940 u in Bold | **Fixed.** §3.1, §1.2: "Tomorrow: a call from home, and a birthday." (744 u Bold); the stokvel teaser (935.7 u Bold, within 10 u) is now "Tomorrow: the stokvel, and your neighbour." (744 u). §3.1, §5.4.8 and the WP7 test state Coming-up lines are `Label` 36 Bold; longest teaser now transport/Bra K 913 u |
+| I9 | With the stretched prefix and the widest 16-character name, the Day 1 morning lines wrap to 3 lines | **Fixed.** §3.1 and WP7: Day 1 lines are tested without the prefix (it can never show on Day 1's morning); the test name is "Mmmmmmmmmmmmmmmm". Every line passes (tightest: Day 2 with the prefix, 958 of 960 u) |
+| I10 | Airtime was category "Bills", so N0 for "Data, airtime and going out" left out the airtime | **Fixed.** §2.3 and WP1 `ObligationDefaults`: airtime category "Phone & data"; rent stays "Bills" |
+| I11 | A personal local path in §6.3; §12 "never sent to MaliGo" conflicted with an aggregator route | **Fixed.** §6.3: "a local copy of `mali2.png` (MD5 …); verify the MD5 before use"; no other personal path in the spec. §12: "never stored by MaliGo; processed on the device where the route allows". (The untracked PDFs in the repo root are outside the spec; the founder moves or ignores them) |
+| Minor | Verifier's minor notes | §9 item 6 lists the Today pill; the data gate noun is "sorting your data" ("Shift opens after sorting your data", 640 u); §3.2 says "choice energy only" for the 12-of-16 claim and lists the script's fallback lists |
+
 ---
 
 ## 12. Later: bank-data source (not in the beta)
@@ -2924,8 +2998,8 @@ filled from a player's real transactions, so that today's design does not block 
   The default stays the two taps; a bank source is opt-in only.
 - **Keep the summary, never the transactions.** What is stored is only the summarised profile: spending
   categories with their share and typical amounts, the payday (day of the month), and recurring debits
-  (label, category, amount, day). Raw transactions are never stored or sent to MaliGo; where possible they
-  are processed on the device and discarded once the summary is made.
+  (label, category, amount, day). Raw transactions are never stored by MaliGo; they are processed on the device where the route
+  allows, and discarded once the summary is made.
 - **Same object, no game changes.** The bank route fills the same `SpendingProfile` (§2.7): `source =
   "bank_feed"` or `"statement"`, the reserved `categoryShares`, `recurringDebits` and `paydayDayOfMonth`, and
   from them the two fields the game reads, `focus` (the largest of the four spending groups) and `travel`

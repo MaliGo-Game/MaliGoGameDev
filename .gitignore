@@ -118,3 +118,6 @@ Assets/kenney_city-kit-suburban_20/
 
 # Founder-only notes (the repo is public)
 docs/internal/
+
+# Personal documents dropped in the project root (the repo is public)
+/*.pdf

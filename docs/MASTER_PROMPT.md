@@ -99,7 +99,7 @@ build any now.
   `dotnet build` it. Do the same for `Assembly-CSharp-Editor.csproj` if editor scripts
   change. Zero errors is required. Delete the temporary files afterwards.
 - Pure logic (money, days, bills) gets scripted checks outside Unity.
-- Commit messages end with the attribution line in `CLAUDE.md`.
+- Commit messages carry no AI attribution trailer (see `CLAUDE.md`).
 
 ## 8. Work plan
 

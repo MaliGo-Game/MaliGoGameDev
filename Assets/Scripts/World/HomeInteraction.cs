@@ -99,15 +99,16 @@ namespace MaliGo.World
                 return;
             }
 
-            ObligationSettlement settlement = null;
+            NightResult result = null;
 
+            // Interim (WP1): the night runs through DayCycle (bills, close the day, open the next).
+            // WP5/WP7 replace this whole flow with the sleep confirm and DayFlowController.
             PlayerDataManager.Instance.UpdatePlayerData(data =>
             {
-                data.currentDay = Mathf.Max(1, data.currentDay) + 1;
-                settlement = ObligationLedger.SettleDue(data, data.currentDay);
-                data.financialStats.energy = 100f;
+                result = DayCycle.EndDay(data);
             }, saveImmediately: true);
 
+            ObligationSettlement settlement = result?.settlement;
             if (settlement != null)
             {
                 ShowMaliLine(DescribeNight(settlement));

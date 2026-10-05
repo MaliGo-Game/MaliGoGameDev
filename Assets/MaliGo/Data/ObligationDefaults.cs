@@ -4,24 +4,22 @@ using System.Collections.Generic;
 namespace MaliGo.Data
 {
     /// <summary>
-    /// The bills every player starts with, and the numbers to tune them. A first pass,
-    /// sized against R150 a shift at Work: a week of shifts (R1050) covers rent and
-    /// airtime (R560) with room left for the day-to-day choices, but not for every treat.
+    /// The bills every player starts with: airtime R60 due Day 2 and rent R500 due Day 3, then every
+    /// 7 days (outside the chapter). Due days are absolute, not "today + n" (design spec 2.3).
     /// </summary>
     public static class ObligationDefaults
     {
         public const string RentId = "rent";
         public const string AirtimeId = "airtime_data";
 
-        public const float RentAmount = 500f;
-        public const float AirtimeAmount = 60f;
-        public const int WeeklyIntervalDays = 7;
+        public const float RentAmount = ChapterConfig.RentAmount;
+        public const float AirtimeAmount = ChapterConfig.AirtimeAmount;
+        public const int WeeklyIntervalDays = ChapterConfig.WeeklyIntervalDays;
 
-        /// <summary>
-        /// Days after the current day that each bill first falls due. Staggered and early
-        /// so a short playtest meets a bill instead of finishing before the first one.
-        /// </summary>
+        /// <summary>Retired: due days are absolute now (ChapterConfig.AirtimeDueDay / RentDueDay).</summary>
         public const int AirtimeFirstDueAfterDays = 1;
+
+        /// <summary>Retired: due days are absolute now (ChapterConfig.AirtimeDueDay / RentDueDay).</summary>
         public const int RentFirstDueAfterDays = 2;
 
         /// <summary>Stress added on a night when anything is left unpaid.</summary>
@@ -34,26 +32,32 @@ namespace MaliGo.Data
                 return;
             }
 
-            int today = Math.Max(1, data.currentDay);
-
             AddObligation(data, new Obligation
             {
                 obligationId = AirtimeId,
-                label = "Airtime & data",
+                label = "Airtime",
+                shortLabel = "Airtime",
                 amount = AirtimeAmount,
                 intervalDays = WeeklyIntervalDays,
-                nextDueDay = today + AirtimeFirstDueAfterDays,
-                paymentsRemaining = -1
+                nextDueDay = ChapterConfig.AirtimeDueDay,
+                paymentsRemaining = -1,
+                category = "Phone & data",
+                kind = Obligation.KindBill,
+                createdDay = 0
             });
 
             AddObligation(data, new Obligation
             {
                 obligationId = RentId,
                 label = "Rent",
+                shortLabel = "Rent",
                 amount = RentAmount,
                 intervalDays = WeeklyIntervalDays,
-                nextDueDay = today + RentFirstDueAfterDays,
-                paymentsRemaining = -1
+                nextDueDay = ChapterConfig.RentDueDay,
+                paymentsRemaining = -1,
+                category = "Bills",
+                kind = Obligation.KindBill,
+                createdDay = 0
             });
 
             data.baseObligationsAdded = true;

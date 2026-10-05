@@ -5,6 +5,15 @@ namespace MaliGo.Data
     [Serializable]
     public class PlayerData
     {
+        /// <summary>Saves with a lower saveVersion are discarded on load (a fresh start, nothing kept).</summary>
+        public const int CurrentSaveVersion = 2;
+
+        /// <summary>
+        /// NO initialiser on purpose: JsonUtility runs field initialisers, so an old save without this
+        /// field must read as 0. Set by CreateNew / ChapterFlow.StartChapter.
+        /// </summary>
+        public int saveVersion;
+
         public string characterName = "";
         public AppearanceData appearance = new AppearanceData();
         public FinancialProfile financialProfile = new FinancialProfile();
@@ -30,6 +39,41 @@ namespace MaliGo.Data
         /// </summary>
         public bool baseObligationsAdded;
 
+        /// <summary>The open day; today.day == currentDay while playing.</summary>
+        public DayRecord today = new DayRecord();
+
+        /// <summary>The current run of the chapter.</summary>
+        public ChapterRecord chapter = new ChapterRecord();
+
+        /// <summary>PaydayPlans id; survives "Live the week again".</summary>
+        public string paydayPlanId = "";
+
+        /// <summary>Snapshot of the plan sentence.</summary>
+        public string paydayPlanText = "";
+
+        /// <summary>&gt; 0: the reveal for that day has not been dismissed.</summary>
+        public int revealPendingForDay;
+
+        /// <summary>The day whose morning line (and DayStarted) already ran.</summary>
+        public int morningLineDay;
+
+        /// <summary>Kept by ChapterFlow.StartChapter, wiped only by Start over (a new save).</summary>
+        public SpendingProfile spendingProfile = new SpendingProfile();
+
+        /// <summary>
+        /// Follow-up scenarios set off by a choice, as keys "scenarioId@day" (ChapterSchedule.FollowUpKey).
+        /// Appended by ScenarioOutcome.Apply, emptied by ChapterFlow.StartChapter.
+        /// </summary>
+        public string[] followUps = Array.Empty<string>();
+
+        /// <summary>True when a save of this version must be discarded on load.</summary>
+        public static bool ShouldReset(int saveVersion) => saveVersion < CurrentSaveVersion;
+
+        /// <summary>
+        /// A new save: the object as before, then ChapterFlow.StartChapter(data, 1), so every new save is a
+        /// valid Day-1 state (cash 600, savings 400, today opened, saveVersion = CurrentSaveVersion,
+        /// default spending profile).
+        /// </summary>
         public static PlayerData CreateNew()
         {
             var data = new PlayerData
@@ -41,9 +85,11 @@ namespace MaliGo.Data
                 financialStats = FinancialStats.CreateDefaults(LifeChapter.YOUNG_PROFESSIONAL),
                 goals = new[] { new FinancialGoal() },
                 progression = new ProgressionData(),
-                isCharacterCreated = false
+                isCharacterCreated = false,
+                spendingProfile = new SpendingProfile(),
+                followUps = Array.Empty<string>()
             };
-            ObligationDefaults.AddBaseObligations(data);
+            MaliGo.Economy.ChapterFlow.StartChapter(data, 1);
             return data;
         }
 

@@ -92,8 +92,6 @@ Packages/packages-lock.json linguist-generated
 *.aiff                  lfs
 *.it                    lfs
 *.mod                   lfs
-*.mp3                   lfs
-*.ogg                   lfs
 *.s3m                   lfs
 *.wav                   lfs
 *.xm                    lfs
@@ -137,8 +135,6 @@ Packages/packages-lock.json linguist-generated
 *.pdb                   lfs
 *.so                    lfs
 # Fonts
-*.otf                   lfs
-*.ttf                   lfs
 # Executable/Installer
 *.apk                   lfs
 *.exe                   lfs
@@ -160,3 +156,9 @@ Assets/kenney_*/** !text !filter !merge !diff
 # Research papers: regular git blobs too, same reason (LFS storage/bandwidth budget
 # exhausted on this account - see the *.png note above, same constraint applies here).
 *.pdf !text !filter !merge !diff
+# Fonts and audio: regular git blobs too, same reason (LFS storage/bandwidth budget
+# exhausted on this account - see the *.png note above, same constraint applies here).
+*.ttf !text !filter !merge !diff
+*.otf !text !filter !merge !diff
+*.ogg !text !filter !merge !diff
+*.mp3 !text !filter !merge !diff

@@ -22,8 +22,23 @@ namespace MaliGo.PlayerIdentity
             public Texture2D skinTexture;
         }
 
+        /// <summary>Resources folder of the six recoloured looks (DESIGN_SPEC §4.6, §6.3b).</summary>
+        public const string RecolouredSkinFolder = "MaliGo/Skins/";
+
+        /// <summary>
+        /// The skin texture for <paramref name="appearance"/>. First the recoloured skater skins (§4.6):
+        /// <c>MaliGo/Skins/skaterMaleA_{tone}</c> when <c>genderPresentation</c> is "masculine", else
+        /// <c>skaterFemaleA_{tone}</c>, with tone light/medium/deep (anything else: medium). If that texture is not
+        /// shipped, the existing <see cref="skinOptions"/> lookup.
+        /// </summary>
         public Texture2D ResolveSkin(AppearanceData appearance)
         {
+            Texture2D recoloured = Resources.Load<Texture2D>(RecolouredSkinPath(appearance));
+            if (recoloured != null)
+            {
+                return recoloured;
+            }
+
             if (appearance == null || skinOptions == null || skinOptions.Length == 0)
             {
                 return null;
@@ -64,6 +79,19 @@ namespace MaliGo.PlayerIdentity
             }
 
             return runtimeMaterial;
+        }
+
+        /// <summary>Resources path of the recoloured skin for <paramref name="appearance"/> (null = defaults).</summary>
+        public static string RecolouredSkinPath(AppearanceData appearance)
+        {
+            string body = appearance != null && appearance.genderPresentation == "masculine" ? "skaterMaleA" : "skaterFemaleA";
+            string tone = appearance != null ? appearance.skinTone : null;
+            if (tone != "light" && tone != "medium" && tone != "deep")
+            {
+                tone = "medium";
+            }
+
+            return RecolouredSkinFolder + body + "_" + tone;
         }
 
         static string MapAppearanceToSkinId(AppearanceData appearance)

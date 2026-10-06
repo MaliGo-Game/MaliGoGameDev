@@ -24,6 +24,9 @@ public static class ContentTests
 
     static readonly string[] FollowUpIds = { "family_callback", "family_callback_full" };
 
+    /// <summary>Scheduled only for the food focus, Day 5 (Revision 4, F1).</summary>
+    const string FoodOnlyId = "kota_run";
+
     static readonly HashSet<string> Categories = new HashSet<string>
     {
         "Work", "Food", "Transport", "Phone & data", "Shopping", "Family", "Friends", "Home", "Bills", "Pay-later",
@@ -200,11 +203,11 @@ public static class ContentTests
 
     // ------------------------------------------------------------------ scenarios
 
-    public static void TestFifteenScenarios()
+    public static void TestSixteenScenarios()
     {
-        Assert.True(ScenarioLibrary.AllIds.Count == 15, "AllIds has " + ScenarioLibrary.AllIds.Count + " ids");
-        var expected = new HashSet<string>(ScheduledIds.Concat(FollowUpIds));
-        Assert.True(expected.SetEquals(ScenarioLibrary.AllIds), "AllIds is not the 13 scheduled + 2 follow-up ids");
+        Assert.True(ScenarioLibrary.AllIds.Count == 16, "AllIds has " + ScenarioLibrary.AllIds.Count + " ids");
+        var expected = new HashSet<string>(ScheduledIds.Concat(FollowUpIds).Concat(new[] { FoodOnlyId }));
+        Assert.True(expected.SetEquals(ScenarioLibrary.AllIds), "AllIds is not the 13 scheduled + kota_run + 2 follow-up ids");
         foreach (string id in ScenarioLibrary.AllIds)
         {
             ScenarioDefinition s = Def(id);
@@ -314,6 +317,44 @@ public static class ContentTests
             "cant_this_week follow-up");
         Assert.True(ChoiceOf(Def("family_obligation"), "send_part").followUpAfterDays == 2, "follow-up after 2 days");
         Assert.True(new ScenarioChoice().instalmentIntervalDays == 2, "instalmentIntervalDays default is 2");
+    }
+
+    public static void TestKotaRunAndRetags()
+    {
+        // Revision 4 (F1): the food week's second food moment.
+        ScenarioDefinition kota = Def(FoodOnlyId);
+        Assert.Equal("CORNER", kota.spotId, "kota run spot");
+        Assert.Equal("Food", kota.moneyCategory, "kota run category");
+        Assert.True(kota.choices.Length == 3, "kota run choices");
+        ScenarioChoice full = ChoiceOf(kota, "full_kota");
+        ScenarioChoice share = ChoiceOf(kota, "share_kota");
+        ScenarioChoice cook = ChoiceOf(kota, "cook_home");
+        Assert.True(full.cashDelta == -65f && full.energyDelta == 0f, "full kota R65, no energy");
+        Assert.True(share.cashDelta == -30f && share.energyDelta == -10f, "half a kota R30 and 10 energy");
+        Assert.True(cook.cashDelta == 0f && cook.energyDelta == -20f, "cook at home 20 energy");
+        Assert.True(ChapterSchedule.ScheduledDay(FoodOnlyId, "food") == 5, "food Day 5");
+        foreach (string focus in new[] { "transport", "data_social", "home_family" })
+        {
+            Assert.True(ChapterSchedule.ScheduledDay(FoodOnlyId, focus) == 0, "no kota run for " + focus);
+        }
+
+        // Retags (review): careful choices are not "made the day easier", skipping lunch is not "later".
+        Assert.True(ChoiceOf(Def("credit_bnpl"), "pay_in_full").behaviourTag == ScenarioBehaviourTag.Neutral, "pay in full");
+        Assert.True(ChoiceOf(Def("taxi_fare_rise"), "lift_club").behaviourTag == ScenarioBehaviourTag.Neutral, "lift club");
+        Assert.True(ChoiceOf(Def("food_decision"), "skip_lunch").behaviourTag == ScenarioBehaviourTag.Frugal, "skip lunch");
+
+        // Ledger labels read as noun phrases in "{label} took the most today: R{amt}.": no amounts, no commas.
+        foreach (var (focus, travel) in Profiles())
+        {
+            foreach (string id in ScenarioLibrary.AllIds)
+            {
+                foreach (ScenarioChoice c in Def(id, focus, travel).choices)
+                {
+                    Assert.True(!Regex.IsMatch(c.ledgerLabel, @"R\d") && c.ledgerLabel.IndexOf(',') < 0,
+                        id + "/" + c.choiceId + " ledger '" + c.ledgerLabel + "' carries an amount or a comma");
+                }
+            }
+        }
     }
 
     public static void TestEveryChoiceTaggedTheSameXp()
@@ -469,8 +510,9 @@ public static class ContentTests
                 Assert.True(!string.IsNullOrEmpty(ChapterSchedule.TeaserForNight(day, focus)), focus + " teaser " + day);
             }
 
-            Assert.True(seen.Count == 13 && new HashSet<string>(seen).SetEquals(ScheduledIds),
-                focus + ": the 13 scheduled ids must each appear exactly once");
+            string[] scheduled = focus == "food" ? ScheduledIds.Concat(new[] { FoodOnlyId }).ToArray() : ScheduledIds;
+            Assert.True(seen.Count == scheduled.Length && new HashSet<string>(seen).SetEquals(scheduled),
+                focus + ": the " + scheduled.Length + " scheduled ids must each appear exactly once");
             foreach (string id in FollowUpIds)
             {
                 Assert.True(!seen.Contains(id) && ChapterSchedule.ScheduledDay(id, focus) == 0,
@@ -512,6 +554,14 @@ public static class ContentTests
             ChapterSchedule.MorningLine(5, "home_family"), "home_family Day 5 morning line");
         Assert.Equal("Tomorrow: a call from home, and a trip across town.",
             ChapterSchedule.TeaserForNight(3, "data_social"), "data_social teaser for Day 4");
+        Assert.Equal("emergency_expense,mashonisa_offer,kota_run", string.Join(",", ChapterSchedule.ScenariosForDay(5, "food")),
+            "food Day 5 adds the kota run");
+        Assert.Equal("Day 5. Something's not right at home, and your friends want a kota run.",
+            ChapterSchedule.MorningLine(5, "food"), "food Day 5 morning line");
+        Assert.Equal("Tomorrow: something at home, and a kota run.", ChapterSchedule.TeaserForNight(4, "food"),
+            "food teaser for Day 5");
+        Assert.Equal("Tomorrow: something at home needs fixing.", ChapterSchedule.TeaserForNight(4, "transport"),
+            "transport teaser for Day 5");
         foreach (string id in FollowUpIds)
         {
             Assert.Equal("Tomorrow: your aunt calls back.", ChapterSchedule.FollowUpTeaser(id), "follow-up teaser " + id);
@@ -524,7 +574,7 @@ public static class ContentTests
     {
         var expected = new Dictionary<string, string[]>
         {
-            { "CORNER", new[] { "food_decision", "data_runs_out", "group_chat_contribution" } },
+            { "CORNER", new[] { "food_decision", "data_runs_out", "group_chat_contribution", "kota_run" } },
             { "TAXI", new[] { "transport_decision", "taxi_fare_rise" } },
             { "HUB", new[] { "credit_bnpl", "stokvel_decision" } },
             { "SHOPFRONT", new[] { "impulse_purchase" } },
@@ -532,7 +582,9 @@ public static class ContentTests
             { "EAST", new[] { "mashonisa_offer", "windfall" } },
         };
         List<string> all = ChapterSchedule.ActiveScenarioIds(Player(7), false, "food", Array.Empty<string>());
-        Assert.True(all.Count == 13, "schedule off: all 13 scheduled scenarios are active, got " + all.Count);
+        Assert.True(all.Count == 14, "schedule off: all 14 scenarios of the food week are active, got " + all.Count);
+        Assert.True(!ChapterSchedule.ActiveScenarioIds(Player(7), false, "transport", Array.Empty<string>()).Contains(FoodOnlyId),
+            "the kota run is only in the food week");
         foreach (var pair in expected)
         {
             string[] queue = all.Where(id => ChapterSchedule.SpotFor(id) == pair.Key).ToArray();
@@ -645,7 +697,7 @@ public static class ContentTests
             { "food", new[] { "Kota shop", "[taxi]", "Shops by the bank" } },
             { "transport", new[] { "[taxi]", "Corner shop", "Shops by the bank" } },
             { "data_social", new[] { "Corner shop", "Shops by the bank", "[taxi]" } },
-            { "home_family", new[] { "Spaza shop", "Home", "Shops by the bank" } },
+            { "home_family", new[] { "Spaza shop", "Home", "[taxi]" } },
         };
         var taxiLabel = new Dictionary<string, string>
         {
@@ -669,7 +721,10 @@ public static class ContentTests
         Assert.Equal("the spaza shop", ChapterSchedule.SpotPlaceName("CORNER", "home_family", "car"), "home CORNER");
         Assert.Equal("Clothing shop", ChapterSchedule.SpotPlaceLabel("SHOPFRONT", "data_social", "walk"), "data SHOPFRONT");
         Assert.Equal("the pick-up point", ChapterSchedule.SpotPlaceName("TAXI", "food", "ehailing"), "ehailing TAXI");
-        Assert.Equal("your gate", ChapterSchedule.SpotPlaceName("GATE", "transport", "car"), "GATE");
+        Assert.Equal("home", ChapterSchedule.SpotPlaceName("GATE", "transport", "car"), "GATE");
+        Assert.Equal("at home", ChapterSchedule.SpotWhere("GATE", "food", "taxi"), "GATE where");
+        Assert.Equal("down the road", ChapterSchedule.SpotWhere("EAST", "food", "taxi"), "EAST where");
+        Assert.Equal("at the kota shop", ChapterSchedule.SpotWhere("CORNER", "food", "taxi"), "CORNER where");
         Assert.Equal("Lunch at the kota shop", Def("food_decision").promptText, "food prompt");
         Assert.Equal("Kota shop", Def("food_decision").placeLabel, "food place");
         Assert.Equal("Clothing shop", Def("impulse_purchase", "data_social", "taxi").promptText, "hoodie prompt, data_social");
@@ -703,7 +758,18 @@ public static class ContentTests
                 ScenarioChoice walkToday = ChoiceOf(fare, "walk_today");
                 Assert.True(-pay.cashDelta >= 34f && -pay.cashDelta <= 50f, travel + " daily R" + (-pay.cashDelta));
                 Assert.Equal(-pay.cashDelta, pay.instalmentAmount, travel + " daily instalment = today's fare");
-                Assert.Equal(pay.instalmentAmount, walkToday.instalmentAmount, travel + " walk today then the fare");
+                if (travel == "walk")
+                {
+                    // Revision 4 (F2): walkers keep walking; nothing is booked for later.
+                    Assert.True(walkToday.instalmentCount == 0 && walkToday.cashDelta == 0f && walkToday.savingsDelta == 0f,
+                        "walk: keep walking books no fares");
+                    Assert.Equal("Keep walking, no fares", walkToday.label, "walk: keep-walking label");
+                }
+                else
+                {
+                    Assert.Equal(pay.instalmentAmount, walkToday.instalmentAmount, travel + " walk today then the fare");
+                }
+
                 Assert.True(pay.instalmentCount == 4 && pay.instalmentIntervalDays == 1 && pay.instalmentLastDueDay == 7
                             && pay.instalmentKind == "repeat", travel + " daily schedule");
                 Assert.Equal(-120f, ChoiceOf(fare, "lift_club").cashDelta, travel + " lift club");
@@ -751,6 +817,7 @@ public static class ContentTests
 
             dayOf["family_callback"] = dayOf["family_obligation"] + 2;
             dayOf["family_callback_full"] = dayOf["family_obligation"] + 2;
+            dayOf[FoodOnlyId] = 5;
 
             foreach (string id in ScenarioLibrary.AllIds)
             {

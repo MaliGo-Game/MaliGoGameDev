@@ -20,6 +20,13 @@ first screen states the promise and the HUD shows today's start and current tota
 closed (A5). The economy was re-simulated with `tools/sim_chapter.py` (six play styles × 16 profiles);
 its table is the new reference for `EconomySimTests` (§3.2, WP9). Every change is listed in §11.
 
+**Revision 4 (6 Oct 2026):** founder decisions F1 and F2 and the player-experience review. The food week
+gets a second food moment (`kota_run`, Day 5, food focus only) and Mali's N0 line needs R100 or more (F1);
+walkers can keep walking when the fare rises, and the CC places line always shows the travel tap (F2); loan
+days say so in the reveal pill; tags, ledger labels and several lines are reworded; the greeting names
+places as "at home", "down the road". The economy was re-simulated (the food and walk rows of §3.2 change).
+Every change is in §11, "Revision 4".
+
 Contents
 1. Player journey (first 3 minutes, a full day, the chapter end)
 2. Data model, save, PlayerPrefs, money recorder, invariant, tests outside Unity
@@ -55,19 +62,19 @@ ask, don't invent.
 | Start hidden stress | 25 | `ChapterConfig.StartStress = 25f` |
 | Energy | 100 at the start of every day; sleeping resets to 100; never below 0 or above 100 | `ChapterConfig.DailyEnergy = 100f` |
 | Work shift | +R150 cash, needs ≥ 60 energy and uses 60, once per day. **Opens only after the day's first scheduled scenario is resolved** (A1; "first" = position 0 of that day in the player's schedule, §3.1). With the schedule flag off there is no gate | `ChapterConfig.ShiftPay = 150f`, `ShiftEnergyCost = 60f`; `WorkRules.State` (§7.3) |
-| Energy of the free options | Skip lunch 45, walk there and back 45, free Wi-Fi 45, walk today (fare rise) 50, cold showers 10. Anything above 40 taken as the day's first choice leaves < 60, so it costs that day's shift. Energy still never blocks a choice | content, §3.2, §3.4 |
+| Energy of the free options | Skip lunch 45, walk there and back 45, free internet 45, walk today / keep walking (fare rise) 50, cold showers 10, cook at home (kota run) 20, fetch half a kota 10. Anything above 40 taken as the day's first choice leaves < 60, so it costs that day's shift. Energy still never blocks a choice | content, §3.2, §3.4 |
 | Bill: Airtime | R60 (calls and messages; data is bought separately, §3.4.3), due Day 2, then every 7 days (Day 9, outside the chapter) | `ChapterConfig.AirtimeAmount = 60f`, `AirtimeDueDay = 2` |
 | Bill: Rent | R500, due Day 3, then every 7 days (Day 10) | `ChapterConfig.RentAmount = 500f`, `RentDueDay = 3` |
 | Pay-later (speaker) | R120 now + 2 × R130, every 2 days (R380 in all, R20 more than paying R360 now) | content, §3.4 |
 | Day bundles | R15 now + R15 on each of the next 2 nights, never after Day 7 | content, §3.4.3 |
-| Travel amounts (by travel mode, §3.4.0) | Trip across town (usual way): taxi R30, e-hailing R44, on foot R30, car R36. Daily commute from the fare rise: R34 / R50 / R34 / R40, paid that day and every night to Day 7. Lift club R120 for every mode. Bounds every profile stays inside: trip R30–R50, daily R34–R50 | `ScenarioLibrary` (WP3), §3.4.0 |
+| Travel amounts (by travel mode, §3.4.0) | Trip across town (usual way): taxi R30, e-hailing R44, on foot R30, car R36. Daily commute from the fare rise: R34 / R50 / R34 / R40, paid that day and every night to Day 7. Lift club R120 for every mode. On foot (Revision 4) the fare rise's free option is "Keep walking, no fares" (50 energy, nothing later); the other modes walk today and pay from tomorrow. Bounds every profile stays inside: trip R30–R50, daily R34–R50 | `ScenarioLibrary` (WP3), §3.4.0 |
 | Family follow-up | Your aunt calls back 2 days later (only if that day ≤ 7): after "Send R80 for now" she asks R120 (`family_callback`); after "Explain you can't this week" she asks the full R200 (`family_callback_full`) | content, §3.4.7b |
 | Bra K loan | R400 → 1 × R600, or R200 → 1 × R300, due 2 days later | content, §3.4 |
 | Payday commitments | Stokvel R200, Gym debit order R199, Geyser repair R350 (only after "cold showers"), all due Day 8 (never charged in the beta; shown as "Already promised for payday") | content, §3.4 |
 | Spending profile (two taps in character creation) | Focus: `food` / `transport` / `data_social` / `home_family`; travel: `taxi` / `ehailing` / `walk` / `car`. Default `food` + `taxi` = the generic chapter | `SpendingProfile` (§2.7) |
 | Bank transfer chips | R50, R100, R200, each direction | `BankRules.Amounts = {50,100,200}` |
 | XP per scenario choice | 5 (all choices); XP is never shown | content |
-| Hidden stress threshold for Mali's "stretched" tone | ≥ 60. In the Revision 3 simulation (`tools/sim_chapter.py`, every style × profile) the reference styles reach it only through arrears or lost shifts (the saver who skips lunch before work: 61–73; never works: 87–96). A player who keeps every shift and pays every bill can still reach it (up to 77) by stacking deferrals (e.g. skip lunch after the shift, day bundles, pay later, the new fare, can't this week then not this week either, not this time, cold showers, borrow R400 and repay it on night 7, leave the debit order: 77 with the `transport` focus, 70 with the other three foci, in every travel mode). That is intended: putting things off piles up worry. Don't tune it expecting otherwise; the script prints the highest hidden stress over every path it plays | `ChapterConfig.StretchedStress = 60f` |
+| Hidden stress threshold for Mali's "stretched" tone | ≥ 60. In the Revision 3 simulation (`tools/sim_chapter.py`, every style × profile) the reference styles reach it only through arrears or lost shifts (the saver who skips lunch before work: 61–73; never works: 87–98). A player who keeps every shift and pays every bill can still reach it (up to 77) by stacking deferrals (e.g. skip lunch after the shift, day bundles, pay later, the new fare, can't this week then not this week either, not this time, cold showers, borrow R400 and repay it on night 7, leave the debit order: 77 with the `transport` focus, 72 with `food` (cook at home on Day 5), 70 with the other two foci, in every travel mode). That is intended: putting things off piles up worry. Don't tune it expecting otherwise; the script prints the highest hidden stress over every path it plays | `ChapterConfig.StretchedStress = 60f` |
 | Arrears stress | +10 on any night something is still owed (existing) | `ObligationDefaults.MissedPaymentStress` |
 | Save version | 2 (anything lower → fresh start). Revision 3 adds fields with initialisers and keeps 2: no version-2 save has ever shipped | `PlayerData.CurrentSaveVersion = 2` |
 | Interaction radius | 0.7 world units for locations and scenario spots; 0.74 for Mali | arbiter |
@@ -134,7 +141,7 @@ A day takes about 2.5–4 minutes: 2 scenarios (≈ 30–40 s each incl. walking
 
 1. Day 7: debit-order scenario at the gate, shift, Home → Sleep. Night of Day 7 settles anything due Day 7 (e.g. Bra K's R600) **before** the chapter closes.
 2. Day 7 reveal as usual, but the button reads **On to payday** and Coming up says *"Tomorrow is payday."*
-3. **Chapter end, screen A — the week.** Mali waving (left). *Seven days to payday.* *"On Day 1 you had"* **R1 000** *cash + savings*; *"Tonight you have"* **R545** *cash + savings* (amounts at 104 u), neutral pill *"−R455 this week"*, *"Cash R345 · Savings R200"*. Then, at Body size beside the total and never optional when non-zero: *"Still owed going into payday: R___"* (middle path: nothing owed, line omitted) and *"Already promised for payday: R399"* with the list *"Stokvel R200 · Gym R199"* under it. **What moved it most** — your choices, not the fixed bills: three cards (middle path: *Day 5 · Geyser repair, from savings −R350*, *Day 6 · From the neighbour, split +R300*, *Day 2 · Speaker deposit −R120*; the Day 6 call-back's −R120 ties and loses to the earlier event), and under them *"Bills and repayments: −R986"* (airtime, rent, day bundles, speaker, taxi fares). **Next**.
+3. **Chapter end, screen A — the week.** Mali waving (left). *Seven days to payday.* *"On Day 1 you had"* **R1 000** *cash + savings*; *"Tonight you have"* **R515** *cash + savings* (amounts at 104 u), neutral pill *"−R485 this week"*, *"Cash R315 · Savings R200"*. Then, at Body size beside the total and never optional when non-zero: *"Still owed going into payday: R___"* (middle path: nothing owed, line omitted) and *"Already promised for payday: R399"* with the list *"Stokvel R200 · Gym R199"* under it. **What moved it most** — your choices, not the fixed bills: three cards (middle path: *Day 5 · Geyser repair from savings −R350*, *Day 6 · From the neighbour +R300*, *Day 2 · Speaker deposit −R120*; the Day 6 call-back's −R120 ties and loses to the earlier event), and under them *"Bills and repayments: −R986"* (airtime, rent, day bundles, speaker, taxi fares). **Next**.
 4. **Screen B — what Mali noticed.** Mali waving (left), 2–3 reflective lines (§4.4), typed one after another. **Next**.
 5. **Screen C — payday plan.** *"Tomorrow is payday."* *"If you could decide one thing about payday tonight, what would it be?"* Four plan cards (§4.5). Pick one → **Save my plan** (or **Not now**).
 6. **Screen D — close.** Mali: *"Got it. Next time this week starts, I'll remind you what you said."* Caption: *"Chapter 2 starts on payday. It's coming in a future update."* Button **Live the week again** → a fresh run of Chapter 1 (same name, look, goal and spending profile; R600/R400; Day 1). Replaying after Day 7 is the beta's ending (E2 closed, A5). On the new Day 1 Mali opens with the plan quote (§4.2.4). A replay never shows the previous run's total anywhere, so the week's total can't become a high score to beat.
@@ -531,10 +538,10 @@ for all 16 combinations, §3.2):
 | Changes | How | Where |
 |---|---|---|
 | Places and their generic names | The corner shop is "the kota shop" (food), "the spaza shop" (home and family) or "the corner shop"; the transport spot is "the taxi rank" (taxi, on foot), "the pick-up point" (e-hailing) or "the petrol station" (car); the shop window is "the clothing shop" for data and going out. No real brand names anywhere | §3.3, `ChapterSchedule.SpotPlaceName/SpotPlaceLabel` |
-| Order of the week | The focus picks one of four schedules, so the player's biggest money leak comes up on Day 1 (and the day's first scenario, which opens the shift, is always a need on Days 1–3) | §3.1 |
+| Order of the week | The focus picks one of four schedules, so the player's biggest money leak comes up on Day 1 (and the day's first scenario, which opens the shift, is always a need on Days 1–3). The food week also has a second food moment, the kota run on Day 5 (Revision 4) | §3.1 |
 | Travel amounts | The usual way across town and the daily commute follow the travel mode, inside R30–R50 (trip) and R34–R50 (daily) | §3.4.0 |
-| What Mali says | Reflectively, never as a verdict: the chapter end can say *"You said most of your money goes on getting around. This week that came to R200."* (§4.4 N0) | §4.4 |
-| What the player is shown | Right after the two taps: *"We've built your week around where your money goes."* and their three first places | §4.6, §5.4.13 |
+| What Mali says | Reflectively, never as a verdict: the chapter end can say *"You said most of your money goes on getting around. This week that came to R200."* (§4.4 N0, only from R100) | §4.4 |
+| What the player is shown | Right after the two taps: *"We've built your week around where your money goes."* and their three first places, always including the travel spot, so both taps change the line | §4.6, §5.4.13 |
 
 `ChapterFlow.StartChapter` keeps the profile (like name, look and goal); `Start over` deletes the save, so
 character creation asks the two questions again. Old or hand-edited values are normalised on read
@@ -559,7 +566,7 @@ today's gate always comes first in its spot's queue, ahead of any carry-over (§
 | 2 | `data_runs_out`, `credit_bnpl` | same | same | same | Airtime R60 |
 | 3 | `taxi_fare_rise`, `impulse_purchase` | same | same | same | Rent R500 (+ day bundles) |
 | 4 | `family_obligation`, `group_chat_contribution` | same as `food` | `family_obligation`, `transport_decision` | `emergency_expense`, `group_chat_contribution` | (pay-later 1, fares) |
-| 5 | `emergency_expense`, `mashonisa_offer` | same as `food` | same as `food` | `transport_decision`, `mashonisa_offer` | (fares) |
+| 5 | `emergency_expense`, `mashonisa_offer`, `kota_run` | `emergency_expense`, `mashonisa_offer` | same as `transport` | `transport_decision`, `mashonisa_offer` | (fares) |
 | 6 | `stokvel_decision`, `windfall` | same | same | same | (pay-later 2, fares) |
 | 7 | `debit_order_check` | same | same | same | (Bra K repayment, fares) → chapter end |
 
@@ -569,6 +576,9 @@ need there, is a need whose free option costs energy or leaves something for lat
 fixed anchors stay put: data on Day 2 (before the airtime night), the fare rise on Day 3 (so the commute
 runs Days 4–7), Bra K on Day 5 (repaid on the night of Day 7), the stokvel and the neighbour on Day 6, the
 debit order on Day 7. The family call-back (§3.4.7b) is added two days after the choice that sets it off.
+The food week (Revision 4, F1) has a second food moment, `kota_run` on Day 5 at the kota shop (§3.4.14), so
+the week that starts with lunch comes back to food mid-week, after the geyser and Bra K; it never gates
+(the geyser is Day 5's gate) and no other focus sees it.
 
 **Morning lines** (Passing, on `DayStarted`; keyed by the day's scenario list, so a line is shared by
 every focus that has that list):
@@ -585,6 +595,7 @@ every focus that has that list):
 | family, transport | "Day 4. Your phone's going to ring today, and there's a trip across town." |
 | geyser, group chat | "Day 4. Something's not right at home, and the group chat is busy." |
 | geyser, Bra K | "Day 5. Something's not right at home this morning." |
+| geyser, Bra K, kota run (food) | "Day 5. Something's not right at home, and your friends want a kota run." |
 | transport, Bra K | "Day 5. There's a trip across town, and Bra K wants a word." |
 | stokvel, neighbour | "Day 6. The stokvel meets at the shops today, and your neighbour's looking for you." |
 | debit order | "Day 7. Last day before payday." |
@@ -593,7 +604,8 @@ every focus that has that list):
 data, and a deal at the phone shop." · fare/hoodie "Tomorrow: town costs more, and that hoodie again." ·
 family/group "Tomorrow: a call from home, and a birthday." · family/transport "Tomorrow: a
 call from home, and a trip across town." · geyser/group "Tomorrow: something at home, and the group
-chat." · geyser/Bra K "Tomorrow: something at home needs fixing." · transport/Bra K "Tomorrow: a trip
+chat." · geyser/Bra K "Tomorrow: something at home needs fixing." · geyser/Bra K/kota run "Tomorrow: something at
+home, and a kota run." · transport/Bra K "Tomorrow: a trip
 across town, and Bra K wants a word." · stokvel/neighbour "Tomorrow: the stokvel, and your neighbour."
 · debit order "Tomorrow: the last day before payday." · after Day 7 "Tomorrow is payday." ·
 a follow-up due tomorrow (either call-back, §3.4.7b): "Tomorrow: your aunt calls back." (§5.4.8 Coming up).
@@ -676,11 +688,11 @@ style resolves the day's first scenario, then works if it can, then plays the re
 
 | Style | Choices |
 |---|---|
-| Saver | the free option every time, even before the shift: skip lunch, walk, free Wi-Fi, leave the speaker, hoodie money to savings, walk today, can't this week (then not this week either when she calls back asking R200), not this time, geyser from savings, no loan, join the stokvel, all to savings, cancel the gym |
+| Saver | the free option every time, even before the shift: skip lunch, walk, free internet, leave the speaker, hoodie money to savings, walk today (on foot: keep walking), can't this week (then not this week either when she calls back asking R200), not this time, geyser from savings, no loan, cook at home (food week), join the stokvel, all to savings, cancel the gym |
 | Always works | the saver's choices, except that the day's first choice never leaves less than 60 energy: there it takes the option that costs least over the week among those that keep the shift (vetkoek, day bundles, the lift club, the usual way across town) |
-| Middle | vetkoek, the usual way across town, day bundles, pay-later, walk away, the new fare, R80 to family (then R120 when she calls back), gift only, geyser from savings, no loan, join, half and half, leave the debit order |
+| Middle | vetkoek, the usual way across town, day bundles, pay-later, walk away, the new fare, R80 to family (then R120 when she calls back), gift only, geyser from savings, no loan, half a kota (food week), join, half and half, leave the debit order |
 | Never works | the middle choices, never takes a shift |
-| Comfort | kota, a ride, 1GB, speaker in full, hoodie, lift club, R200 to family\*, dinner\*, geyser from cash\*, no loan, join, keep the R300 as cash, move R199 to cash\* |
+| Comfort | kota, a ride, 1GB, speaker in full, hoodie, lift club, R200 to family\*, dinner\*, geyser from cash\*, no loan, the full kota (food week), join, keep the R300 as cash, move R199 to cash\* |
 | Comfort + loan | as comfort, but borrow R400 on Day 5 |
 
 \* when unaffordable the style takes the next affordable option in its own list, then the first
@@ -695,10 +707,15 @@ today's content they give the same results as "first affordable in authored orde
 |---|---|---|---|---|---|---|---|---|---|
 | Saver | R384 | R470 | R854 | −R146 | R0 | 3 | 4 | 55, 55, 50 (no shift), then 100 | R0 / R200 |
 | Always works | R785 | R470 | R1 255 | +R255 | R200 | — | 7 | 100 every day | R0 / R200 |
-| Middle | R345 | R200 | R545 | −R455 | R97 | — | 7 | 100, 100, 95, then 100 | R0 / R399 |
+| Middle | R315 | R200 | R515 | −R485 | R97 | — | 7 | 100, 100, 95, then 100 | R0 / R399 |
 | Never works | R0 | R350 | R350 | −R650 | R0 | 3, 4, 5, 6, 7 | 0 | — | R455 / R749 |
-| Comfort | R614 | R1 | R615 | −R385 | R0 | 3, 4, 5 | 7 | 100, except 90 on Day 5 | R0 / R749 |
-| Comfort + loan | R414 | R1 | R415 | −R585 | R0 | 3, 4 | 7 | 100, except 90 on Day 5 | R0 / R749 |
+| Comfort | R549 | R1 | R550 | −R450 | R0 | 3, 4, 5 | 7 | 100, except 90 on Day 5 | R0 / R749 |
+| Comfort + loan | R349 | R1 | R350 | −R650 | R0 | 3, 4 | 7 | 100, except 90 on Day 5 | R0 / R749 |
+
+Revision 4 changed two kinds of rows: every `food` row (the kota run on Day 5: middle −R30, comfort and comfort +
+loan −R65, the saver and "always works" cook at home) and every `walk` row's saver (+R136: the saver keeps
+walking from Day 3 instead of paying R34 a night on Days 4–7; it still loses Day 3's shift). Everything else
+is unchanged.
 
 Read the totals with the last column: comfort ends above middle in cash + savings only because its geyser
 fell to "cold showers" (R350 promised for payday) and it was short R335 on rent from night 3 to night 5.
@@ -710,21 +727,21 @@ table, WP9):
 
 | Profile (focus / travel) | Saver | Middle | Comfort | Comfort + loan | Never works | Always works |
 |---|---|---|---|---|---|---|
-| food / taxi (default) | 854 | 545 | 615 | 415 | 350 | 1 255 |
-| food / ehailing | 790 | 451 | 615 | 415 | 350 | 1 255 |
-| food / walk | 854 | 545 | 615 | 415 | 350 | 1 255 |
-| food / car | 830 | 509 | 615 | 415 | 350 | 1 255 |
+| food / taxi (default) | 854 | 515 | 550 | 350 | 350 | 1 255 |
+| food / ehailing | 790 | 421 | 550 | 350 | 350 | 1 255 |
+| food / walk | 990 | 515 | 550 | 350 | 350 | 1 255 |
+| food / car | 830 | 479 | 550 | 350 | 350 | 1 255 |
 | transport / taxi | 854 | 545 | 615 | 415 | 350 | 1 245 |
 | transport / ehailing | 790 | 451 | 615 | 415 | 350 | 1 231 |
-| transport / walk | 854 | 545 | 615 | 415 | 350 | 1 245 |
+| transport / walk | 990 | 545 | 615 | 415 | 350 | 1 245 |
 | transport / car | 830 | 509 | 615 | 415 | 350 | 1 239 |
 | data_social / taxi | 854 | 545 | 615 | 415 | 350 | 1 255 |
 | data_social / ehailing | 790 | 451 | 615 | 415 | 350 | 1 255 |
-| data_social / walk | 854 | 545 | 615 | 415 | 350 | 1 255 |
+| data_social / walk | 990 | 545 | 615 | 415 | 350 | 1 255 |
 | data_social / car | 830 | 509 | 615 | 415 | 350 | 1 255 |
 | home_family / taxi | 704 | 425 | 205 | 50 | 200 | 1 225 |
 | home_family / ehailing | 640 | 345 | 205 | 50 | 200 | 1 211 |
-| home_family / walk | 704 | 425 | 205 | 50 | 200 | 1 225 |
+| home_family / walk | 840 | 425 | 205 | 50 | 200 | 1 225 |
 | home_family / car | 680 | 395 | 205 | 50 | 200 | 1 219 |
 
 What the simulation shows for all 16 profiles (rerun `python tools/sim_chapter.py`; exit 0 = all hold;
@@ -733,7 +750,7 @@ What the simulation shows for all 16 profiles (rerun `python tools/sim_chapter.p
   available rule, §3.4), and 3 000 random play-throughs per profile (random choices, random shift timing,
   some "Not now") never meet a scenario with nothing affordable and never break the invariant.
 - **No dominant style.** "Always works" has the best end total in every profile, but it is never best on
-  everything: it goes without six wants, it leaves gogo's call-back unanswered (a follow-up), and in 12
+  everything: it goes without six wants, it leaves Gogo's call-back unanswered (a follow-up), and in 12
   of 16 profiles it also uses more choice energy (energy spent on choices only, not on shifts) than the
   middle path. Every other style is beaten on money.
 - **The free option before work costs the shift.** The saver loses the shift on Days 1–3 (energy 55, 55,
@@ -744,7 +761,7 @@ What the simulation shows for all 16 profiles (rerun `python tools/sim_chapter.p
   week (R200 to family on Day 1, two days before rent) is the hardest (comfort R205, comfort + loan R50
   with R45 still owed); no style ends more than R255 up. The highest reachable end total is R1 605 (all
   seven shifts, every free option after the shift, cold showers), with R550 already promised for payday;
-  random play-throughs ended at most R1 425.
+  random play-throughs ended at most R1 510 (Revision 4; R1 425 before).
 - **Hidden stress.** The reference styles reach the stretched tone (60) only through arrears or lost
   shifts. A player who keeps every shift and pays every bill can still reach it, up to 77, by stacking
   deferrals (§0); that is intended, since putting things off piles up worry. The script prints the
@@ -770,7 +787,7 @@ absolute position):
 
 | Spot id | Anchor + offset | World (x, z) | Scenarios (default `food` queue order) |
 |---|---|---|---|
-| `CORNER` | `Road_T_Intersection` + (0.6, 0, 1.2) | (0.6, 1.2) | food_decision, data_runs_out, group_chat_contribution (today's gate always first, see below) |
+| `CORNER` | `Road_T_Intersection` + (0.6, 0, 1.2) | (0.6, 1.2) | food_decision, data_runs_out, group_chat_contribution, kota_run (food week only) (today's gate always first, see below) |
 | `TAXI` | `Road_Crossing` + (0.2, 0, −0.5) | (−1.8, −0.5) | transport_decision, taxi_fare_rise |
 | `HUB` | `Road_Connecting_End` + (0, 0, −0.4) | (0.0, 3.6) | credit_bnpl, stokvel_decision |
 | `SHOPFRONT` | `Road_Connecting_2` + (−1.5, 0, 1.1) | (−1.5, 3.1) | impulse_purchase |
@@ -785,7 +802,7 @@ absolute position):
 | `CORNER` | the kota shop / Kota shop | the corner shop / Corner shop | the corner shop / Corner shop | the spaza shop / Spaza shop |
 | `SHOPFRONT` | the shop window up the road / Shop window | same | the clothing shop / Clothing shop | the shop window up the road / Shop window |
 | `HUB` | the shops by the bank / Shops by the bank (every focus) | | | |
-| `GATE` | your gate / Home (every focus) | | | |
+| `GATE` | home / Home (every focus) | | | |
 | `EAST` | down the road / Down the road (every focus) | | | |
 
 | Spot | `taxi` | `ehailing` | `walk` | `car` |
@@ -794,8 +811,12 @@ absolute position):
 
 `WeekPlaces(focus, travel)` = the labels of the first three distinct spots in that focus's schedule order:
 `food` Kota shop · Taxi rank · Shops by the bank; `transport` Taxi rank · Corner shop · Shops by the bank;
-`data_social` Corner shop · Shops by the bank · Taxi rank; `home_family` Spaza shop · Home · Shops by the
-bank (the transport spot's label follows the travel mode).
+`data_social` Corner shop · Shops by the bank · Taxi rank; `home_family` Spaza shop · Home · Taxi rank (the
+transport spot's label follows the travel mode). Revision 4 (F2): the transport spot is always one of the
+three; when it is not among the first three distinct spots it replaces the third, so the line reacts to the
+travel tap for every focus (before, `home_family` showed "Shops by the bank" whatever the travel tap).
+`SpotWhere(spot, focus, travel)` (new) is the greeting's form: "at " + the place name, except `EAST`
+("down the road").
 
 Closest pairs among the nine fixed interactables: Home–GATE 1.50 (the minimum), CORNER–GATE 1.51,
 Work–EAST 1.52, HUB–SHOPFRONT 1.58; every pair ≥ 1.4 = 2 × radius 0.7. The player spawns 0.1 from Home,
@@ -846,8 +867,8 @@ instalments · Mali reaction.
 | Travel | Trip across town, the usual way (`transport_decision/usual`) | Daily commute after the fare rise (`taxi_fare_rise/pay_new_fare`) | Option order in `transport_decision` |
 |---|---|---|---|
 | `taxi` (Minibus taxi) | "Minibus taxi (R15 each way)", −R30, energy −5, ledger "Taxi there and back" | R17 each way: "Pay the new fare (R34 a day)", −R34 today, energy −5, then R34 a night to Day 7; obligation "Taxi fares" / short "Taxi"; ledger "Taxi at the new fare" | usual, walk, ride |
-| `ehailing` (E-hailing rides) | "Shared ride both ways (R44)", −R44, energy 0, ledger "Shared ride there and back" | R25 each way: "Pay the new price (R50 a day)", −R50, energy 0, then R50 a night; "Shared rides" / "Rides"; ledger "Shared ride, new price" | usual, walk, ride |
-| `walk` (Mostly on foot) | as `taxi` | as `taxi` | walk, usual, ride |
+| `ehailing` (E-hailing rides) | "Shared ride both ways (R44)", −R44, energy 0, ledger "Shared ride there and back" | R25 each way: "Pay the new price (R50 a day)", −R50, energy 0, then R50 a night; "Shared rides" / "Rides"; ledger "Shared ride at the new price" | usual, walk, ride |
+| `walk` (Mostly on foot) | as `taxi` | as `taxi`; the free option is "Keep walking, no fares" (Revision 4, §3.4.6) | walk, usual, ride |
 | `car` (Own or shared car) | "Petrol for the car (R36)", −R36, energy 0, ledger "Petrol for the trip" | "Pay for petrol (R40 a day)", −R40, energy 0, then R40 a night; "Petrol" / "Petrol"; ledger "Petrol for the day" | usual, walk, ride |
 
 Bounds (every profile, checked by `tools/sim_chapter.py` and `ContentTests`): trip R30–R50, daily
@@ -862,8 +883,8 @@ R34–R50; the lift club (R120), the private ride (R90) and the walking energy (
 | id | Label | Ledger | Cash | Sav | Energy | Stress | Tag | Mali reaction |
 |---|---|---|---|---|---|---|---|---|
 | `kota` | Kota and a cold drink (R50) | Kota and a cold drink | −50 | 0 | 0 | −5 | Discretionary | "R50 for lunch. You're full till supper." |
-| `vetkoek` | Vetkoek and mince (R20) | Vetkoek and mince | −20 | 0 | 0 | −2 | Frugal | "R20 for lunch, {name}, and you're sorted." |
-| `skip_lunch` | Skip lunch | — | 0 | 0 | −45 | +5 | Deferred | "No money out. Skipping lunch took 45 energy, and a shift needs 60." |
+| `vetkoek` | Vetkoek and mince (R20) | Vetkoek and mince | −20 | 0 | 0 | −2 | Frugal | "R20 for lunch. That keeps you going till supper." |
+| `skip_lunch` | Skip lunch | — | 0 | 0 | −45 | +5 | Frugal | "No money out. Skipping lunch took 45 energy, and a shift needs 60." |
 
 #### 3.4.2 `transport_decision` — Day 1 (`food`, `transport`), Day 4 (`data_social`), Day 5 (`home_family`) · TAXI · `car` · Transport · gate noun "the trip across town"
 - Title: **Getting across town** · Place: "[Place]" · Prompt: "A trip across town"
@@ -887,22 +908,22 @@ The Revision 2 ids `minibus_taxi` and `e_hailing` become `usual` and `ride`. Ord
 |---|---|---|---|---|---|---|---|---|---|
 | `bundle_1gb` | Buy 1GB to last till payday (R85) | 1GB data bundle | −85 | 0 | 0 | 0 | Neutral | — | "R85 and you're online till payday. The CV can go." |
 | `day_bundle` | Buy day bundles (R15 a day) | Day data bundle | −15 | 0 | 0 | +2 | Deferred | 2 × R15, interval 1, firstDue 0 (= tomorrow), lastDue 7, label "Day bundles", short "Data", category Phone & data, kind repeat | "R15 covers today, {name}. Day bundles carry on: R15 on {laterDays}." · no later: "R15 covers today, {name}, and that's the last day before payday." |
-| `free_wifi` | Use the free Wi-Fi at the mall | — | 0 | 0 | −45 | +3 | Frugal | — | "No money out. The walk to the mall and the wait took 45 energy." |
+| `free_wifi` | Use the free internet at the mall | — | 0 | 0 | −45 | +3 | Frugal | — | "No money out. The walk to the mall and the wait took 45 energy." |
 
 The Day-2 bill is now "Airtime" (calls and messages, R60, §0), not the data bundle, so buying data on
 Day 2 no longer clashes with a renewal that night. The three options now trade off (A2): 1GB costs most
 today and nothing later; day bundles cost least today and R30 more over the next two nights (Later
-"R15 × 2" / "Days 3, 4"); the Wi-Fi costs no money and 45 energy, so as Day 2's first scenario it costs
+"R15 × 2" / "Days 3, 4"); the free internet costs no money and 45 energy, so as Day 2's first scenario it costs
 the shift.
 
 #### 3.4.4 `credit_bnpl` — Day 2 · HUB · `shoppingBasket` · Shopping · gate noun "the speaker"
 - Title: **Pay now or pay later?** · Place: "Phone shop" · Prompt: "A deal at the phone shop"
-- Situation: "The phone shop has a Bluetooth speaker you've wanted for ages: R360. Pay it all now, or take it home today for R120 and pay R130 twice over the next few days."
+- Situation: "The phone shop has a wireless speaker you've wanted for ages: R360. Pay it all now, or take it home today for R120 and pay R130 twice over the next few days."
 - Mali intro: "Same speaker, {name}. Two ways to pay for it."
 
 | id | Label | Ledger | Cash | Sav | Energy | Stress | Tag | Instalments | Mali reaction |
 |---|---|---|---|---|---|---|---|---|---|
-| `pay_in_full` | Pay R360 now | Speaker, paid in full | −360 | 0 | 0 | 0 | Discretionary | — | "R360 today, and the speaker's paid off." |
+| `pay_in_full` | Pay R360 now | Full price for the speaker | −360 | 0 | 0 | 0 | Neutral | — | "R360 today, and the speaker's paid off." |
 | `pay_later` | Pay later: R120 now, then R130 twice | Speaker deposit | −120 | 0 | 0 | +3 | Deferred | count 2 × R130, interval 2, firstDue 0 (= today + 2), label "Speaker (pay-later)", short "Speaker", category Pay-later, kind instalment | "It's yours today, {name}. R130 comes off in two days, and again after that: R20 more in all." |
 | `leave_it` | Leave it for now | — | 0 | 0 | 0 | 0 | Frugal | — | "Nothing spent. The speaker stays in the shop." |
 
@@ -935,8 +956,8 @@ of that ("R130 × 2" in Later against −R360 now).
 | id | Label | Ledger | Cash | Sav | Energy | Stress | Tag | Instalments | Mali reaction |
 |---|---|---|---|---|---|---|---|---|---|
 | `pay_new_fare` | per §3.4.0 | per §3.4.0 | −[daily] | 0 | per §3.4.0 | 0 | Neutral | 4 × [daily], interval 1, firstDue 0 (= tomorrow), lastDue 7, label and short per §3.4.0, category Transport, kind repeat | `taxi`/`walk`: "R34 today, {name}. The fare comes off again on {laterDays}." · `ehailing`: "R50 today, {name}. The new price comes off again on {laterDays}." · `car`: "R40 today, {name}. Petrol comes off again on {laterDays}." · no later: "R[daily] today, {name}. That's the last trip before payday." |
-| `lift_club` | Join a lift club (R120 till payday) | Lift club till payday | −120 | 0 | 0 | −3 | Discretionary | — | "R120 for the lift club. Your trips to the course are covered till payday." |
-| `walk_today` | `taxi`/`walk`: Walk today, taxi from tomorrow · `ehailing`: Walk today, ride from tomorrow · `car`: Walk today, drive from tomorrow | — | 0 | 0 | −50 | +2 | Frugal | same as `pay_new_fare` | "Nothing spent today. That walk took 50 energy, and it's R[daily] a day again from tomorrow." · no later: "Nothing spent today. That walk took 50 energy." |
+| `lift_club` | Join a lift club (R120 till payday) | Lift club till payday | −120 | 0 | 0 | −3 | Neutral | — | "R120 for the lift club. Your trips to the course are covered till payday." |
+| `walk_today` | `taxi`: Walk today, taxi from tomorrow · `ehailing`: Walk today, ride from tomorrow · `car`: Walk today, drive from tomorrow · `walk`: Keep walking, no fares (no instalments; reaction "No fares to pay. Walking to town and back took 50 energy today.") | — | 0 | 0 | −50 | +2 | Frugal | same as `pay_new_fare` | "Nothing spent today. That walk took 50 energy, and it's R[daily] a day again from tomorrow." · no later: "Nothing spent today. That walk took 50 energy." |
 
 Transport is now a cost that comes back (A2, closes E7): from Day 3 the player is in town every day till
 payday, so each option is a plan for the rest of the week. Chosen on Day 3 (`taxi`): the new fare is R34
@@ -947,16 +968,23 @@ R34 and costs the shift. A carry-over shortens the series (chosen on Day 5: Days
 there is nothing later. `walk_to_main_road` and `walk_all_the_way` of Revision 2 are replaced by
 `walk_today`; the lift club now does cover the trips it promises.
 
+**Walkers (Revision 4, F2).** For travel mode `walk` the third option keeps its id `walk_today` (choice ids
+stay the same for every profile) but is "Keep walking, no fares": 0 cash, 50 energy, +2 stress, Frugal, no
+payments later. Its cost is the energy on the card: as Day 3's first scenario it leaves 50, so it costs
+that day's R150 shift (the same trade as every other gate). The game has no energy cost on later days, so
+the card shows only today's 50 and Mali's line says "today". Fair choice holds: it costs least money but the
+most energy; the fare and the lift club keep the shift.
+
 #### 3.4.7 `family_obligation` — Day 4 (Day 1 for `home_family`) · GATE · `token_give` · Family · gate noun "the call from home"
 - Title: **A call from home** · Place: "At home" · Prompt: "Your phone's ringing"
 - Situation: "Your aunt calls. Gogo's chronic medication has run out and the clinic is out of stock. The pharmacy wants R200 to tide her over."
-- Mali intro: "It's your aunt, {name}. It's about gogo."
+- Mali intro: "It's your aunt, {name}. It's about Gogo."
 
 | id | Label | Ledger | Cash | Sav | Energy | Stress | Tag | Follow-up | Mali reaction |
 |---|---|---|---|---|---|---|---|---|---|
-| `send_full` | Send R200 | R200 for gogo's meds | −200 | 0 | 0 | 0 | Neutral | — | "R200 is on its way to gogo. That's R200 of your week." |
-| `send_part` | Send R80 for now | R80 towards gogo's meds | −80 | 0 | 0 | +3 | Neutral | `family_callback` after 2 days, Later "Call back" | "R80 is on its way to gogo, {name}. Your aunt will call back about the rest." |
-| `from_savings` | Send R200 from savings | Gogo's meds, from savings | 0 | −200 | 0 | 0 | Neutral | — | "R200 from savings, and gogo has her meds. Savings is at R{savings} now." |
+| `send_full` | Send R200 | Gogo's meds | −200 | 0 | 0 | 0 | Neutral | — | "R200 is on its way to Gogo. That's R200 of your week." |
+| `send_part` | Send R80 for now | Towards Gogo's meds | −80 | 0 | 0 | +3 | Neutral | `family_callback` after 2 days, Later "Call back" | "R80 is on its way to Gogo, {name}. Your aunt will call back about the rest." |
+| `from_savings` | Send R200 from savings | Gogo's meds from savings | 0 | −200 | 0 | 0 | Neutral | — | "R200 from savings, and Gogo has her meds. Savings is at R{savings} now." |
 | `cant_this_week` | Explain you can't this week | — | 0 | 0 | 0 | +8 | Neutral | `family_callback_full` after 2 days, Later "Call back" | "That's a hard call to make. Your aunt says she'll try you again in two days." |
 
 A follow-up is only added if its day is ≤ 7 (chosen on Day 6 or 7, nothing comes back inside the chapter
@@ -978,8 +1006,8 @@ then R120" cost R120 and "R80 now, then R120" cost R200 for the same ending, so 
 
 | id | Label | Ledger | Cash | Sav | Energy | Stress | Tag | Mali reaction |
 |---|---|---|---|---|---|---|---|---|
-| `send_rest` | Send R120 | R120 for gogo's meds | −120 | 0 | 0 | 0 | Neutral | "R120 is on its way, and gogo's covered till month-end." |
-| `from_savings` | Send R120 from savings | Gogo's meds, from savings | 0 | −120 | 0 | 0 | Neutral | "R120 from savings, and gogo's covered. Savings is at R{savings} now." |
+| `send_rest` | Send R120 | Rest of Gogo's meds | −120 | 0 | 0 | 0 | Neutral | "R120 is on its way, and Gogo's covered till month-end." |
+| `from_savings` | Send R120 from savings | Gogo's meds from savings | 0 | −120 | 0 | 0 | Neutral | "R120 from savings, and Gogo's covered. Savings is at R{savings} now." |
 | `not_this_week` | Not this week either | — | 0 | 0 | 0 | +6 | Neutral | "That's a hard one to say twice. Your week stays as it was." |
 
 **`family_callback_full`** — 2 days after `cant_this_week`; the same title, place, prompt, Mali intro and
@@ -988,8 +1016,8 @@ Coming-up line as `family_callback`
 
 | id | Label | Ledger | Cash | Sav | Energy | Stress | Tag | Mali reaction |
 |---|---|---|---|---|---|---|---|---|
-| `send_full` | Send R200 | R200 for gogo's meds | −200 | 0 | 0 | 0 | Neutral | "R200 is on its way, and gogo's covered till month-end." |
-| `from_savings` | Send R200 from savings | Gogo's meds, from savings | 0 | −200 | 0 | 0 | Neutral | "R200 from savings, and gogo's covered. Savings is at R{savings} now." |
+| `send_full` | Send R200 | Gogo's meds | −200 | 0 | 0 | 0 | Neutral | "R200 is on its way, and Gogo's covered till month-end." |
+| `from_savings` | Send R200 from savings | Gogo's meds from savings | 0 | −200 | 0 | 0 | Neutral | "R200 from savings, and Gogo's covered. Savings is at R{savings} now." |
 | `not_this_week` | Not this week either | — | 0 | 0 | 0 | +6 | Neutral | "That's a hard one to say twice. Your week stays as it was." |
 
 No reference style pays after `cant_this_week` (the saver and "always works" answer "not this week
@@ -1008,7 +1036,7 @@ on that day at its spot (§3.3 queue). Owners: fields WP3, apply WP6, activation
 | id | Label | Ledger | Cash | Sav | Energy | Stress | Tag | Mali reaction |
 |---|---|---|---|---|---|---|---|---|
 | `in_for_dinner` | I'm in (R150) | Birthday dinner | −150 | 0 | 0 | −4 | Discretionary | "You're in. That's R150 of the week." |
-| `gift_only` | Send R50 for the gift, skip the dinner | Birthday gift | −50 | 0 | 0 | +2 | Neutral | "You showed up for her, {name}, just not at the table. R100 stays with you." |
+| `gift_only` | Send R50 for the gift, skip the dinner | Birthday gift | −50 | 0 | 0 | +2 | Neutral | "R50 towards the gift, {name}. You'll miss the dinner, and R100 stays with you." |
 | `not_this_time` | Not this time | — | 0 | 0 | 0 | +4 | Frugal | "That message is hard to send. Your week stays as it was." |
 
 `{friend}` (§4.1) is "Thandi", or "Lerato" when the player's name starts with "Thandi", so the friend never
@@ -1021,7 +1049,7 @@ shares the player's name. Ledger labels carry no name.
 
 | id | Label | Ledger | Cash | Sav | Energy | Stress | Tag | Instalments | Mali reaction |
 |---|---|---|---|---|---|---|---|---|---|
-| `from_savings` | Pay from savings (R350) | Geyser repair, from savings | 0 | −350 | 0 | 0 | Neutral | — | "R350 from savings, and there's hot water tonight. Savings is at R{savings} now." |
+| `from_savings` | Pay from savings (R350) | Geyser repair from savings | 0 | −350 | 0 | 0 | Neutral | — | "R350 from savings, and there's hot water tonight. Savings is at R{savings} now." |
 | `from_cash` | Pay from cash (R350) | Geyser repair | −350 | 0 | 0 | 0 | Neutral | — | "R350 from cash, and there's hot water tonight. You've got R{cash} in cash." |
 | `cold_showers` | Cold showers until payday | — | 0 | 0 | −10 | +12 | Deferred | 1 × R350, firstDueDay 8, label "Geyser repair", short "Geyser", category Home, kind commitment | "No money out today. It's cold water for now, and the R350 repair is promised for payday." |
 
@@ -1066,9 +1094,9 @@ regret it", "knowing who holds the money matters most") are gone.
 
 | id | Label | Ledger | Cash | Sav | Energy | Stress | Tag | Mali reaction |
 |---|---|---|---|---|---|---|---|---|
-| `all_to_savings` | Put all R300 in savings | From the neighbour, to savings | 0 | +300 | 0 | 0 | Frugal | "R300 into savings. Your {goalName} is at R{savings} of R{goalTarget}." |
+| `all_to_savings` | Put all R300 in savings | Neighbour's money to savings | 0 | +300 | 0 | 0 | Frugal | "R300 into savings. Your {goalName} is at R{savings} of R{goalTarget}." |
 | `keep_cash` | Keep it as cash | From the neighbour | +300 | 0 | 0 | −5 | Discretionary | "R300 in your pocket, {name}. Yours to use." |
-| `half_half` | R150 cash, R150 savings | From the neighbour, split | +150 | +150 | 0 | −2 | Neutral | "R150 each way. Some for now, some for your {goalName}." |
+| `half_half` | R150 cash, R150 savings | From the neighbour | +150 | +150 | 0 | −2 | Neutral | "R150 each way. Some for now, some for your {goalName}." |
 
 #### 3.4.13 `debit_order_check` (new, simplified) — Day 7 · GATE · `notepad` · Bills · gate noun "the gym SMS"
 - Title: **It goes off on payday** · Place: "At home" · Prompt: "An SMS about your gym"
@@ -1083,9 +1111,26 @@ regret it", "knowing who holds the money matters most") are gone.
 
 No conditional fee is modelled (D15); it is named, not charged.
 
+#### 3.4.14 `kota_run` (Revision 4, F1) — Day 5, food focus only · CORNER · `shoppingBasket` · Food · gate noun "the kota run" (never a gate)
+- Title: **Kota run tonight** · Place: "[Place]" (Kota shop) · Prompt: "Your friends want a kota run"
+- Situation: "Your friends are doing a kota run tonight and want to know if you're in. A full kota and chips is R65, delivered. You could split one and fetch it, or cook at home."
+- Mali intro: "Your friends are getting kotas tonight, {name}. Are you in?"
+
+| id | Label | Ledger | Cash | Sav | Energy | Stress | Tag | Mali reaction |
+|---|---|---|---|---|---|---|---|---|
+| `full_kota` | Full kota and chips (R65) | Kota run with friends | −65 | 0 | 0 | −4 | Discretionary | "R65 for supper, and you ate it with your friends." |
+| `share_kota` | Split one and fetch it (R30) | Half a kota | −30 | 0 | −10 | −1 | Neutral | "R30 for your half, {name}. Fetching it took 10 energy." |
+| `cook_home` | Cook with what's at home | — | 0 | 0 | −20 | +2 | Frugal | "No money out. Cooking supper took 20 energy." |
+
+Every option has a cost on its card (A2): the full kota costs the most money and no energy; half a kota
+costs R30 and 10 energy (fetching it); cooking costs no money and 20 energy. None is a decline: each is
+supper. With the R100 N0 rule (§4.4) a food player who takes the kota at lunch and the full kota (R115) is
+told so at the chapter end; one who takes the vetkoek and half a kota (R50) is not. It never gates, so the
+energy costs only bite if it is played before the shift on a later day as a carry-over.
+
 **Always-available rule** (tested): every scenario has at least one choice with `cashDelta ≥ 0` and
 `savingsDelta ≥ 0`, so a scenario can never be fully disabled and the day's first scenario can always be
-resolved (so A1 can never lock the shift away): skip lunch, walk, free Wi-Fi, leave it, walk away, walk
+resolved (so A1 can never lock the shift away): skip lunch, walk, free internet, leave it, walk away, walk
 today, can't this week, not this week either, not this time, cold showers, every loan option, both
 stokvel options, every windfall option, cancel the gym and leave it.
 
@@ -1096,13 +1141,14 @@ stokvel options, every windfall option, cancel the gym and leave it.
 |---|---|---|
 | Lunch | Skip lunch | 45 energy: as the day's first choice it costs the shift |
 | Trip across town | Walk | 45 energy (same) |
-| Out of data | Free Wi-Fi | 45 energy (same) |
+| Out of data | Free internet | 45 energy (same) |
 | | Day bundles | Later "R15 × 2": R45 in all, paid over three days |
 | Speaker | Pay later | Later "R130 × 2": R20 more than paying in full |
-| Fare rise | Walk today | 50 energy (costs Day 3's shift) and Later "R34 × 4" |
+| Fare rise | Walk today (on foot: keep walking) | 50 energy (costs Day 3's shift) and Later "R34 × 4" (on foot: nothing later) |
 | | Lift club | the most cash today (R120) |
 | Call from home | Can't / R80 for now | Later "Call back": your aunt calls again in two days, asking R200 after "can't", R120 after R80 |
 | Geyser | Cold showers | Later "R350 on payday" |
+| Kota run (food week) | Cook at home / half a kota | 20 energy / R30 and 10 energy |
 | Bra K | Not today | nothing: borrowing is the costly side (Later R600 / R300) |
 | Hoodie, dinner, stokvel, gym, second call | Declining | going without it (the card's label) |
 
@@ -1149,15 +1195,17 @@ no money formatter. Built as: [stretched prefix] + waiting sentence + [one suffi
 - Stretched prefix (hidden stress ≥ 60): "You seem stretched, {name}. "
 - Waiting sentence, by number of active scenarios today (spot queue heads only, names from §3.3):
   - 0: "That's everything for today, {name}. Sleep at home when you're ready."
-  - 1: "One thing is waiting today: {places}."
-  - 2: "Two things are waiting today: {places}."
-  - 3+: "{count} things are waiting today: {places}." (`{count}` as a digit)
-  - `{places}` joins names: "A", "A and B", "A, B and C".
+  - 1: "One thing is waiting today, {places}."
+  - 2: "Two things are waiting today, {places}."
+  - 3+: "{count} things are waiting today, {places}." (`{count}` as a digit)
+  - `{places}` joins where-phrases: "A", "A and B", "A, B and C", e.g. "Two things are waiting today, at the
+    spaza shop and at home." (Revision 4: before, "…: your gate and down the road." read oddly.)
 - Suffix, first that applies: arrears > 0 → " R{owed} is still owed for {label}."; shift state NotYet →
   " The shift opens after {gate}." (`gate` returned raw in `extra`); not worked and energy ≥ 60 →
   " There's a shift going at the far end of the main road."; not worked and energy < 60 →
   " You're too tired for a shift today."
-- `{places}` uses `ChapterSchedule.SpotPlaceName(spot, focus, travel)`, so the names follow the profile.
+- `{places}` uses `ChapterSchedule.SpotWhere(spot, focus, travel)` ("at the kota shop", "at home", "down the
+  road"), so the names follow the profile.
 - First meeting (only if `hasMetMali` is false; CC sets it true on **Let's go**, WP8): "Hi {name}, I'm Mali. I'll be
   with you all week, all the way to payday." This is the only entry left in `MaliDialogueLibrary`
   (`first_meeting`); every other legacy entry is deleted (WP3, §8).
@@ -1197,12 +1245,14 @@ later event.
 | A6 | mover Out | "{label} took the most today: R{amt}." |
 
 (`{label}` = event label with " (part)" removed; `{repay}`/`{due}` from the matching loan obligation.)
+Ledger labels are noun phrases with no amount and no comma (Revision 4, tested), so A6 never repeats the
+amount: "Gogo's meds took the most today: R200.", not "R200 for gogo's meds took the most today: R200."
 
 **B — what's next** (first that matches; "new day" = the day after the closed one):
 | # | Condition | Template |
 |---|---|---|
 | B1 | closed day is 7 | "Tomorrow is payday." |
-| B2 | any arrears now | "R{owed} is still owed for {label}. It comes off first when there's cash, in your pocket or moved from savings at the Bank." (`{label}` = label of `LargestArrears`) |
+| B2 | any arrears now | "R{owed} is still owed for {label}. It comes off tomorrow night from your cash, and the Bank can move savings into cash before then." (`{label}` = label of `LargestArrears`; arrears are charged at night, from cash only, Revision 4) |
 | B3 | `ObligationLedger.DueOnNight(data, day + 1)` is not empty | "Tomorrow night, {label} takes R{amt}. You've got R{cash} in cash." (`{label}` = shortLabel; if several, the largest) |
 | B4 | the new day is 7 | "Tomorrow is the last day before payday." |
 | B5 | any savings delta today ≠ 0 | "Savings is at R{savings} of your R{goalTarget} {goalName}." |
@@ -1220,7 +1270,7 @@ Count words: 2 → "Twice", 3 → "Three times", 4 → "Four times", n ≥ 5 →
 
 | # | Rule | Line |
 |---|---|---|
-| N0 | `spendingProfile.source == "onboarding"` and Σ outflow (bills included) in `SpendingFocus.Categories(focus)` ≥ R1 | "You said most of your money goes on {focus}. This week that came to R{amt}." |
+| N0 | `spendingProfile.source == "onboarding"` and Σ outflow (bills included) in `SpendingFocus.Categories(focus)` ≥ R100 (Revision 4; `ChapterReflection.N0Minimum`) | "You said most of your money goes on {focus}. This week that came to R{amt}." |
 | N1 | chose `emergency_expense/from_savings` | "When the geyser broke, you reached for savings first." |
 | N1b | chose `emergency_expense/from_cash` | "When the geyser broke, you paid for it from cash the same day." |
 | N1c | chose `emergency_expense/cold_showers` | "When the geyser broke, you waited it out with cold water." |
@@ -1228,7 +1278,7 @@ Count words: 2 → "Twice", 3 → "Three times", 4 → "Four times", n ≥ 5 →
 | N3 | Deferred tag count ≥ 2 | "{CountWord} you moved a cost to later." |
 | N4 | Frugal tag count ≥ 3 | "{CountWord} you held on to your money rather than spend it." |
 | N5 | Discretionary tag count ≥ 2 | "{CountWord} you chose the option that made the day easier." |
-| N6 | Σ positive savings deltas (all events) ≥ R100 | "R{saved} went into savings over the week." |
+| N6 | net savings movement (Σ savings deltas of all events, withdrawals included; Revision 4) ≥ R100 | "R{saved} went into savings over the week." |
 | N7 | any `chapter.days[i].owedAtClose > 0.005`, and `TotalArrears > 0.005` now | "Some nights there wasn't enough cash for everything due. R{owed} is still owed going into payday." |
 | N7b | any `chapter.days[i].owedAtClose > 0.005`, nothing owed now | "Some nights there wasn't enough cash for everything due. It carried over and got paid." |
 | F1 | fallback | `shiftsWorked` ≥ 2: "You took a shift on {shifts} days this week." · 1: "You took a shift on one day this week." · 0: "You didn't take a shift this week." |
@@ -1236,7 +1286,8 @@ Count words: 2 → "Twice", 3 → "Three times", 4 → "Four times", n ≥ 5 →
 
 Observations of actions, never traits ("you reached for savings", never "you are a saver"). No scores,
 no ratios ("x of 7"), no comparisons with other players or with an earlier run. N0 only puts the
-player's own answer next to the week's number; it never says whether that is a lot (A3).
+player's own answer next to the week's number; it never says whether that is a lot (A3). Under R100 it is
+skipped (Revision 4), so a small amount never reads as contradicting what the player said.
 
 **What moved it most** (`ChapterReflection.Summary`): the top three events of the chapter whose
 `sourceId` starts with `scenario:` (scenario choices, loans included), transfers excluded, ranked by
@@ -1326,7 +1377,7 @@ that was hidden by a modal comes back when the modal closes, unless its end cond
 | Home sheet | Title "Home". Rows "Day", "Cash", "Savings", "Energy", "Tonight", "Still owed", "Next". Button "Sleep: end Day {day}" |
 | Sleep confirm | Title "End Day {day}?" · "Tonight: {label} R{amt}" per item of `DueOnNight(day)`, or "Nothing is due tonight." · "Still owed: R{owed} ({label}). It comes off first." · "One thing is still waiting today. It'll carry over to tomorrow." / "{n} things are still waiting today. They'll carry over to tomorrow." · not worked and energy ≥ 60: "You haven't taken today's shift." · not worked and energy < 60: "You were too tired for a shift today." · buttons **Not yet** / **Sleep** |
 | Bank sheet | Title "Bank". Rows "Cash", "Savings", "Goal" (title + R target), progress bar. Groups "Move to savings", "Take out of savings"; chips "R50" "R100" "R200"; disabled caption "Not enough cash" / "Not enough savings" |
-| Reveal | "You started Day {day} with" · "You ended it with" · "cash + savings" (caption beside each headline amount) · "+R210 today" / "−R85 today" / "R0 today" · "Cash R{cash} · Savings R{savings}" · "Still owed: R{owed}" plus " (R{owedBefore} this morning)" when the morning figure differs · "New promise: {shortLabel} R{amt} on Day {due}" / "… on payday" / "New promise: {shortLabel} R{amt} × {n}, Days {d1}, {d2}" (three or more consecutive days: "Days {d1}–{dn}", e.g. "New promise: Taxi R34 × 4, Days 4–7") (at most 2 lines; a third and more → "+{n} more new promises") · "What moved it" · "Other ({n})" · loan rows: "{label} · R{repay} back Day {due}" · "Coming up" · "Day {n} night: {label} R{amt}" · "Tomorrow: your aunt calls back." (a follow-up due tomorrow, §5.4.8) · button "On to Day {n}" / "On to payday" |
+| Reveal | "You started Day {day} with" · "You ended it with" · "cash + savings" (caption beside each headline amount) · "+R210 today" / "−R85 today" / "R0 today", and on a day with a loan "+R166 today · R400 borrowed" (Revision 4) · "Cash R{cash} · Savings R{savings}" · "Still owed: R{owed}" plus " (R{owedBefore} this morning)" when the morning figure differs · "New promise: {shortLabel} R{amt} on Day {due}" / "… on payday" / "New promise: {shortLabel} R{amt} × {n}, Days {d1}, {d2}" (three or more consecutive days: "Days {d1}–{dn}", e.g. "New promise: Taxi R34 × 4, Days 4–7") (at most 2 lines; a third and more → "+{n} more new promises") · "What moved it" · "Other ({n})" · loan rows: "{label} · R{repay} back Day {due}" · "Coming up" · "Day {n} night: {label} R{amt}" · "Tomorrow: your aunt calls back." (a follow-up due tomorrow, §5.4.8) · button "On to Day {n}" / "On to payday" |
 | Chapter end A | "Seven days to payday" · "On Day 1 you had" · "Tonight you have" · "cash + savings" · "+R440 this week" · "Still owed going into payday: R{owed}" · "Already promised for payday: R{sum}" + list "Stokvel R200 · Gym R199" · "What moved it most" · "Bills and repayments: −R{amt}" · **Next** |
 | Chapter end B | "What Mali noticed" · **Next** |
 | Chapter end D | "Chapter 2 starts on payday. It's coming in a future update." · **Live the week again** (the beta's ending: a replay of the same week, E2 closed) |
@@ -1677,11 +1728,12 @@ Anchors are relative to the safe-area root. "safeWidth" = width of the safe root
 backdrop Inverse 100% (full bleed, outside the safe root)
 +----------------------------- min(1840, safeWidth-80) x 1000, Paper -----------------------------+
 | You started Day 5 with                         | What moved it                                    |
-| R497   cash + savings        (104 u)           |  v  Geyser repair, from savings         -R350    |
+| R497   cash + savings        (104 u)           |  v  Geyser repair from savings          -R350    |
 | You ended it with                              |  ^  Shift at work                       +R150    |
-| R663   cash + savings        (104 u, counts)   |  ^  Loan from Bra K · R600 back Day 7   +R400    |  <- MoneyTransfer colour
-| ( +R166 today )             (neutral pill)     |  v  Taxi fares                           -R34    |
-| Cash R613 · Savings R50                        | Coming up                                        |
+| R633   cash + savings        (104 u, counts)   |  ^  Loan from Bra K · R600 back Day 7   +R400    |  <- MoneyTransfer colour
+| ( +R136 today · R400 borrowed )  (pill)        |  v  Half a kota                          -R30    |
+| Cash R583 · Savings R50                        |  v  Taxi fares                           -R34    |
+|                                                | Coming up                                        |
 | New promise: Bra K R600 on Day 7               | Day 6 night: Speaker R130                        |
 |                                                | Tomorrow: your aunt calls back.                  |
 |------------------------------------------------------------------------------------------------- |
@@ -1739,8 +1791,8 @@ Screen A (the week)                                   Screen B (noticed)       S
 +---------------+-----------------------------------+ +--------+-------------+ +-------------------+ +-----------------+
 | (MaliWave on  | Seven days to payday              | |MaliWave| What Mali   | | Tomorrow is payday| | (MaliWave)      |
 |  gold circle) | On Day 1 you had  R1 000 cash+sav | |        | noticed     | | If you could ...  | | [Mali] Got it.  |
-|               | Tonight you have  R545  cash+sav  | |        | line 1      | | ( ) When pay ...  | | Next time ...   |
-|               | ( -R455 this week ) Cash · Sav    | |        | line 2      | | ( ) ...           | | Chapter 2 ...   |
+|               | Tonight you have  R515  cash+sav  | |        | line 1      | | ( ) When pay ...  | | Next time ...   |
+|               | ( -R485 this week ) Cash · Sav    | |        | line 2      | | ( ) ...           | | Chapter 2 ...   |
 |               | Still owed going into payday: R0  | |        | (line 3)    | | ( ) ...           | | [Live the week  |
 |               | Already promised for payday: R399 | |        |             | | ( ) ...           | |  again]         |
 |               |   Stokvel R200 · Gym R199         | |        |             | | [Not now] [Save]  | |                 |
@@ -1768,7 +1820,7 @@ Screen A (the week)                                   Screen B (noticed)       S
   `ChapterReflection.Noticed`, Dialogue 46 SemiBold, each its own paragraph (30 gap), typed one after the
   other at the text speed (tap completes); **Next** (primary 320 × 144) bottom-right once typed.
 - **Screen C — payday plan:** four plan cards (full right-column width, 144 tall, radio state = `Tint`
-  fill + 6 u `Coin` ring); **Save my plan** (primary, disabled until one is picked) and **Not now** (text
+  fill + 6 u `AccentPrimary` (#087A18) ring + a checkmark icon 48 u; plan-card text inset 96 u); **Save my plan** (primary, disabled until one is picked) and **Not now** (text
   button).
 - **Screen D — close:** Mali line (Dialogue box style inline), caption, **Live the week again** (primary
   480 × 144).
@@ -1825,8 +1877,8 @@ Shows 6 s or until tapped.
 - **Screen 3 (your money, A3):** two rows, each a question in Body 40 Bold `TextPrimary` (52; 689 and
   607 u) and, 12 u under it, four cards 330 × 144 (gaps 20; 4 × 330 + 3 × 20 = 1 380), `Card`, radius 36,
   card shadow, label Label 36 Bold centred, ≤ 2 lines in 250 u ("Data, airtime and going out" 215 + 237 u,
-  "Own or shared car" 247 + 54 u). Selected = `Tint` fill + 6 u `Coin` ring (as the plan cards), one per
-  row. Vertical budget: dots 80 · question 1 52 · 12 · cards 144 · 30 · question 2 52 · 12 · cards 144 · 24
+  "Own or shared car" 247 + 54 u). Selected = `Tint` fill + 6 u `AccentPrimary` (#087A18) ring + a checkmark
+  icon 36 u (as the plan cards, whose check is 48 u), one per row. Vertical budget: dots 80 · question 1 52 · 12 · cards 144 · 30 · question 2 52 · 12 · cards 144 · 24
   · summary 2 lines (Body 40 SemiBold "We've built your week around where your money goes." 1 004 u, then
   the places in Label 36 Bold `TextSecondary`, ≤ 846 u: 96) = 646 ≤ 696 (button top). The summary fades in
   (`Fade`) when both rows have a pick and updates if a pick changes; no icons on the cards.
@@ -2532,12 +2584,12 @@ use it (via `UiCanvasFactory.Create`).
   `WorkRules.State` and `Obligation.shortLabel`, which a stage-1 package cannot use.)
 - Exposes: new fields (§3.4, incl. `gateNoun`, `isFollowUp`, `instalmentLastDueDay`, `maliReactionNoLater`,
   `followUpScenarioId`, `followUpAfterDays`, `followUpLaterText`) with defaults (`instalmentIntervalDays = 2`,
-  others empty/0/false); ids as `ScenarioLibrary` constants for all 15 scenarios (13 scheduled + the
-  2 follow-ups, `family_callback` and `family_callback_full`); `ScenarioLibrary.Get(id, focus, travel)` (§3.4.0 variants, place names), `GetById`, `AllIds`;
+  others empty/0/false); ids as `ScenarioLibrary` constants for all 16 scenarios (13 scheduled for every
+  focus, `kota_run` for the food focus (Revision 4) and the 2 follow-ups, `family_callback` and `family_callback_full`); `ScenarioLibrary.Get(id, focus, travel)` (§3.4.0 variants, place names), `GetById`, `AllIds`;
   §3.1 `ChapterSchedule` with the Revision 3 signatures (profile and follow-ups as plain arguments).
 - Consumes: only existing types (no WP1 types; uses literal category strings from §2.2, literal 7/8, and
   writes out the focus/travel ids and their defaults itself).
-- Tests (`ContentTests`): 15 scenarios; 2–4 choices each; every choice xp = 5; always-available rule;
+- Tests (`ContentTests`): 16 scenarios; 2–4 choices each; every choice xp = 5; always-available rule;
   schedule lists each id exactly once; spot queues match §3.3; all strings pass the glyph whitelist; the
   full §4.3 banned list absent from every reaction, intro, situation, morning line, greeting and every
   `MaliDialogueLibrary.AllEntries` line; `MaliDialogueLibrary.AllEntries` has exactly one entry; ledger
@@ -2719,8 +2771,8 @@ use it (via `UiCanvasFactory.Create`).
   through `ScenarioLibrary.Get`, `ScenarioOutcome`, `WorkRules` (with the gate) and `DayCycle`, played the
   way `tools/sim_chapter.py` plays them (each day: the gate scenario, then the shift if the style works
   and it is Open, then the other active scenarios in `ActiveScenarioIds` order, then sleep); expected end
-  totals = the §3.2 "Every profile" table (default profile: saver 854, always works 1 255, middle 545,
-  never works 350, comfort 615, comfort + loan 415), the default-profile details of §3.2 (cash, savings,
+  totals = the §3.2 "Every profile" table (default profile: saver 854, always works 1 255, middle 515,
+  never works 350, comfort 550, comfort + loan 350; Revision 4), the default-profile details of §3.2 (cash, savings,
   nights still owing, shifts), and the invariant every night. If the C# and the script disagree, the
   spec's content is the referee; fix whichever is wrong and rerun both.
 - Bootstrap steps, world scene, in this order, each in `Step(label, ...)`: `app lifecycle`
@@ -2980,6 +3032,28 @@ Aileron fonts, the same method as before.
 | I10 | Airtime was category "Bills", so N0 for "Data, airtime and going out" left out the airtime | **Fixed.** §2.3 and WP1 `ObligationDefaults`: airtime category "Phone & data"; rent stays "Bills" |
 | I11 | A personal local path in §6.3; §12 "never sent to MaliGo" conflicted with an aggregator route | **Fixed.** §6.3: "a local copy of `mali2.png` (MD5 …); verify the MD5 before use"; no other personal path in the spec. §12: "never stored by MaliGo; processed on the device where the route allows". (The untracked PDFs in the repo root are outside the spec; the founder moves or ignores them) |
 | Minor | Verifier's minor notes | §9 item 6 lists the Today pill; the data gate noun is "sorting your data" ("Shift opens after sorting your data", 640 u); §3.2 says "choice energy only" for the 12-of-16 claim and lists the script's fallback lists |
+
+### Revision 4 (founder decisions F1–F2 and the player-experience review, 6 Oct 2026)
+
+The content and economy batch. `tools/sim_chapter.py` was updated to match and re-run (exit 0: no stuck
+path, no dominant style, fair-choice rule holds in every travel mode, comfort ends below R1 000 in every
+profile and comfort + loan is short at least one night); `EconomySimTests` and the §3.2 tables carry the new
+totals. Every new or changed string passes the existing `AileronMetrics` fit tests.
+
+| # | Item | Outcome |
+|---|---|---|
+| F1 | Food players got almost the default week, and N0 could quote R20 | **New scenario `kota_run`** (§3.4.14), food focus only, Day 5 at the kota shop: full kota R65 / half a kota R30 + 10 energy / cook at home 20 energy; XP 5 on each; ledger labels ≤ 28 chars; no brands. New Day 5 morning line and teaser for the food list (§3.1). **N0 needs ≥ R100** (§4.4). Food rows of §3.2: middle −R30, comfort and comfort + loan −R65; saver and "always works" cook at home (unchanged totals) |
+| F2a | Walkers were always booked onto taxi fares | §3.4.6: for `walk` the free option (id `walk_today`) is "Keep walking, no fares": 50 energy (it costs Day 3's shift as the gate), nothing later. Walk rows: saver +R136 (854 → 990, 704 → 840 for `home_family`); other styles unchanged |
+| F2b | The CC places line ignored the travel tap for `home_family` | `WeekPlaces` always includes the transport spot (it replaces the third place when missing): `home_family` now reads "Spaza shop · Home · Taxi rank" (or the travel mode's label) |
+| R1 | A loan day's pill read as a good day | `DeltaPill`: "+R136 today · R400 borrowed" (`RevealLineBuilder.Borrowed`); fit: "−R9 999 today · R400 borrowed" is within the 757 u column less the pill's 60 u padding |
+| R2 | Tags misdescribed careful choices in N3/N5 | `pay_in_full` Discretionary → Neutral; `lift_club` Discretionary → Neutral; `skip_lunch` Deferred → Frugal. (Tags never change money; totals unaffected) |
+| R3 | "R200 for gogo's meds took the most today: R200." | Ledger labels carry no amount and no comma (tested): "Gogo's meds", "Towards Gogo's meds", "Rest of Gogo's meds", "Gogo's meds from savings", "Geyser repair from savings", "Full price for the speaker", "Shared ride at the new price", "From the neighbour" (half and half). A6 template kept |
+| R4 | Tone | Removed "You showed up for her, {name}, just not at the table." (now "R50 towards the gift, {name}. You'll miss the dinner, and R100 stays with you."); vetkoek's line no longer the only warm named one ("R20 for lunch. That keeps you going till supper."); B2 says arrears come off at night from cash; N6 uses the net savings movement; "Gogo" capitalised everywhere; "Bluetooth" → "wireless", "Wi-Fi" → "internet" |
+| R5 | "Two things are waiting today: your gate and down the road." | Greeting templates use a comma and where-phrases from the new `ChapterSchedule.SpotWhere` ("at the kota shop", "at home", "down the road"); `SpotPlaceName(GATE)` is "home" |
+| R6 | Hidden stress numbers | The never-works style now peaks at 98 with the food focus (96 before; it is in arrears from night 3 either way); the stacked-deferrals path reaches 72 with the food focus (cooking at home +2). Random play-throughs ended at most R1 510; the highest reachable total stays R1 605 |
+| UI | Selected-card style (UI batch, other branch) | §5.4.9 plan cards and §5.4.13 CC cards: `Tint` fill + 6 u `AccentPrimary` (#087A18) ring + a checkmark icon (36 u on CC cards, 48 u on plan cards; plan-card text inset 96 u), replacing the 6 u `Coin` ring |
+
+Not changed here (owned by the UI batch): the sleep confirm's "It comes off first." (`SleepConfirmView`).
 
 ---
 

@@ -68,6 +68,9 @@ public static class ScenarioOutcomeTests
             { "debit_order_check/move_to_cash", (199, -199, 0, -3) },
             { "debit_order_check/cancel_gym", (0, 0, 0, 0) },
             { "debit_order_check/leave_it", (0, 0, 0, 6) },
+            { "kota_run/full_kota", (-65, 0, 0, -4) },
+            { "kota_run/share_kota", (-30, 0, -10, -1) },
+            { "kota_run/cook_home", (0, 0, -20, 2) },
         };
 
     /// <summary>Spec 3.4.0: (trip, trip energy, daily, daily energy) per travel mode.</summary>
@@ -139,7 +142,9 @@ public static class ScenarioOutcomeTests
             return ChapterSchedule.ScheduledDay(ScenarioLibrary.FamilyObligationId, focus) + 2;
         }
 
-        return ChapterSchedule.ScheduledDay(id, focus);
+        // kota_run is scheduled only in the food week (Day 5); its content is still built for every profile.
+        int day = ChapterSchedule.ScheduledDay(id, focus);
+        return day == 0 && id == ScenarioLibrary.KotaRunId ? 5 : day;
     }
 
     static Obligation Find(PlayerData d, string id) => d.obligations.FirstOrDefault(o => o.obligationId == id);
@@ -494,27 +499,27 @@ public static class ScenarioOutcomeTests
     {
         PlayerData d = State(1);
         string line = Greeting(d, true, out Dictionary<string, string> extra);
-        Assert.Equal("Two things are waiting today: the kota shop and the taxi rank. The shift opens after {gate}.", line,
+        Assert.Equal("Two things are waiting today, at the kota shop and at the taxi rank. The shift opens after {gate}.", line,
                      "Day 1 before lunch");
         Assert.Equal("lunch", extra["gate"], "gate noun");
-        Assert.Equal("Two things are waiting today: the kota shop and the taxi rank. The shift opens after lunch.",
+        Assert.Equal("Two things are waiting today, at the kota shop and at the taxi rank. The shift opens after lunch.",
                      MaliText.Fill(line, d, extra), "filled");
 
         ScenarioDefinition food = Def("food_decision");
         Assert.True(ScenarioOutcome.Apply(d, food, ChoiceOf(food, "vetkoek")), "lunch");
         line = Greeting(d, true, out extra);
-        Assert.Equal("One thing is waiting today: the taxi rank. There's a shift going at the far end of the main road.", line,
+        Assert.Equal("One thing is waiting today, at the taxi rank. There's a shift going at the far end of the main road.", line,
                      "Day 1 after lunch");
         Assert.True(!extra.ContainsKey("gate"), "no gate after lunch");
 
         PlayerData tired = State(1);
         Assert.True(ScenarioOutcome.Apply(tired, food, ChoiceOf(food, "skip_lunch")), "skip lunch");
-        Assert.Equal("One thing is waiting today: the taxi rank. You're too tired for a shift today.",
+        Assert.Equal("One thing is waiting today, at the taxi rank. You're too tired for a shift today.",
                      Greeting(tired, true, out _), "tired");
 
         // Worked: no suffix. Then nothing waiting.
         WorkRules.DoShift(d, ChapterSchedule.GateScenario(1, "food"));
-        Assert.Equal("One thing is waiting today: the taxi rank.", Greeting(d, true, out _), "worked");
+        Assert.Equal("One thing is waiting today, at the taxi rank.", Greeting(d, true, out _), "worked");
         ScenarioDefinition trip = Def("transport_decision");
         Assert.True(ScenarioOutcome.Apply(d, trip, ChoiceOf(trip, "usual")), "trip");
         Assert.Equal("That's everything for today, {name}. Sleep at home when you're ready.", Greeting(d, true, out _), "nothing waiting");
@@ -560,7 +565,7 @@ public static class ScenarioOutcomeTests
 
         PlayerData all = State(1);
         line = Greeting(all, false, out extra);
-        Assert.True(line.StartsWith("6 things are waiting today: the kota shop, the taxi rank, ", StringComparison.Ordinal),
+        Assert.True(line.StartsWith("6 things are waiting today, at the kota shop, at the taxi rank, ", StringComparison.Ordinal),
                     "schedule off: " + line);
         Assert.True(line.EndsWith(" There's a shift going at the far end of the main road.", StringComparison.Ordinal),
                     "schedule off: no gate");
@@ -572,8 +577,13 @@ public static class ScenarioOutcomeTests
 
         // Profile place names.
         PlayerData car = State(1, "transport", "car");
-        Assert.True(Greeting(car, true, out _).StartsWith("Two things are waiting today: the petrol station and the corner shop.",
+        Assert.True(Greeting(car, true, out _).StartsWith("Two things are waiting today, at the petrol station and at the corner shop.",
                                                           StringComparison.Ordinal), "transport/car places");
+
+        // Home and down the road read naturally (Revision 4): home_family Day 1 is the spaza shop and the call from home.
+        PlayerData home = State(1, "home_family", "taxi");
+        Assert.True(Greeting(home, true, out _).StartsWith("Two things are waiting today, at the spaza shop and at home.",
+                                                           StringComparison.Ordinal), "home_family places: " + Greeting(home, true, out _));
 
         // The selector delegates to the greeting.
         Assert.Equal(Greeting(all, true, out _), MaliContextualDialogueSelector.SelectLine(all).line, "selector delegates");

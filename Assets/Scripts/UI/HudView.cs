@@ -248,20 +248,23 @@ namespace MaliGo.UI
 
             if (Mathf.Abs(e.cashDelta) > 0.005f)
             {
-                ShowTag(cashTag, e.cashDelta, e.kind);
+                ShowTag(cashTag, e.cashDelta, e);
             }
 
             if (Mathf.Abs(e.savingsDelta) > 0.005f)
             {
-                ShowTag(savingsTag, e.savingsDelta, e.kind);
+                ShowTag(savingsTag, e.savingsDelta, e);
             }
         }
 
-        void ShowTag(Text tag, float delta, MoneyEventKind kind)
+        void ShowTag(Text tag, float delta, MoneyEvent e)
         {
             UiTween.Stop(tag);
             tag.text = MoneyFormat.Signed(delta);
-            Color color = kind == MoneyEventKind.Transfer
+            // Borrowed money is not income: a loan coming in is neutral like a transfer (as the choice sheet and
+            // the reveal colour it), never the green of money earned.
+            bool loan = e.category == MoneyCategory.Loan && e.kind == MoneyEventKind.In;
+            Color color = e.kind == MoneyEventKind.Transfer || loan
                 ? UiTheme.TextOnInverse
                 : delta > 0f ? UiTheme.MoneyInOnInverse : UiTheme.MoneyOutOnInverse;
             color.a = 1f;

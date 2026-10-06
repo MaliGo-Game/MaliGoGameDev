@@ -30,8 +30,10 @@ namespace MaliGo.Sound
     /// reveal requests its own chime). Clips come from <c>Resources/MaliGo/Audio/&lt;name&gt;</c>; a missing clip
     /// is skipped silently.
     ///
-    /// On creation and on every scene load, if the scene has no <c>AudioListener</c>, one is added to
-    /// <c>Camera.main</c> (MaliGoWorld ships without one).
+    /// On creation and on every scene load, if the loaded scene (or DontDestroyOnLoad) has no enabled
+    /// <c>AudioListener</c>, one is added to that scene's screen camera (MaliGoWorld ships without one). The
+    /// outgoing scene's listener can still be found during <c>sceneLoaded</c>, so it never counts, and the check
+    /// runs again <see cref="ListenerRecheckSeconds"/> after the load; at most one listener is left enabled.
     /// </summary>
     public class AudioManager : MonoBehaviour
     {
@@ -63,6 +65,7 @@ namespace MaliGo.Sound
         const double ScheduleLead = 0.1;
 
         const float ListenerRetrySeconds = 1f;
+        const float ListenerRecheckSeconds = 0.5f;
 
         public static AudioManager Instance { get; private set; }
 
@@ -77,6 +80,8 @@ namespace MaliGo.Sound
         int lastNewDay = -1;
         bool listenerPending;
         float listenerRetryAt;
+        float listenerRecheckAt = -1f;
+        Scene listenerScene;
         bool subscribed;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -182,7 +187,10 @@ namespace MaliGo.Sound
 
         void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
+            // A new scene starts a new run of days (Start over, Live the week again): Day 1's jingle plays again.
+            lastNewDay = -1;
             SetUpScene(scene);
+            listenerRecheckAt = realtime + ListenerRecheckSeconds;
         }
 
         void OnButtonClicked() => PlayClip(ClipUiClick);
@@ -264,6 +272,7 @@ namespace MaliGo.Sound
 
         void SetUpScene(Scene scene)
         {
+            listenerScene = scene;
             EnsureListener();
 
             music.Play(Clip(ClipMusic), AudioSettings.dspTime);
@@ -280,25 +289,34 @@ namespace MaliGo.Sound
         void EnsureListener()
         {
             listenerPending = false;
-            if (FindFirstObjectByType<AudioListener>() != null)
+            AudioListener[] listeners = FindObjectsByType<AudioListener>(FindObjectsSortMode.None);
+
+            // Keep the first enabled listener that belongs to the current scene (or DontDestroyOnLoad) and switch
+            // off any other one there, so there are never two.
+            AudioListener keep = null;
+            foreach (AudioListener listener in listeners)
+            {
+                if (listener == null || !listener.isActiveAndEnabled || !BelongsToCurrentScene(listener.gameObject))
+                {
+                    continue;
+                }
+
+                if (keep == null)
+                {
+                    keep = listener;
+                }
+                else
+                {
+                    listener.enabled = false;
+                }
+            }
+
+            if (keep != null)
             {
                 return;
             }
 
-            Camera camera = Camera.main;
-            if (camera == null)
-            {
-                // A camera that draws to the screen (never a render-texture camera such as the look preview).
-                foreach (Camera candidate in FindObjectsByType<Camera>(FindObjectsSortMode.None))
-                {
-                    if (candidate != null && candidate.isActiveAndEnabled && candidate.targetTexture == null)
-                    {
-                        camera = candidate;
-                        break;
-                    }
-                }
-            }
-
+            Camera camera = ScreenCamera();
             if (camera == null)
             {
                 listenerPending = true;
@@ -306,7 +324,57 @@ namespace MaliGo.Sound
                 return;
             }
 
-            camera.gameObject.AddComponent<AudioListener>();
+            // Whatever is still enabled belongs to the outgoing scene (about to be destroyed): switch it off first.
+            foreach (AudioListener listener in listeners)
+            {
+                if (listener != null && listener.enabled)
+                {
+                    listener.enabled = false;
+                }
+            }
+
+            AudioListener own = camera.GetComponent<AudioListener>();
+            if (own == null)
+            {
+                camera.gameObject.AddComponent<AudioListener>();
+            }
+            else
+            {
+                own.enabled = true;
+            }
+        }
+
+        bool BelongsToCurrentScene(GameObject go)
+        {
+            if (!listenerScene.IsValid())
+            {
+                return true;
+            }
+
+            Scene scene = go.scene;
+            return scene == listenerScene || scene.name == "DontDestroyOnLoad";
+        }
+
+        /// <summary>The current scene's camera that draws to the screen (MainCamera first; never a render-texture
+        /// camera such as the look preview).</summary>
+        Camera ScreenCamera()
+        {
+            Camera main = Camera.main;
+            if (main != null && main.isActiveAndEnabled && main.targetTexture == null && BelongsToCurrentScene(main.gameObject))
+            {
+                return main;
+            }
+
+            foreach (Camera candidate in FindObjectsByType<Camera>(FindObjectsSortMode.None))
+            {
+                if (candidate != null && candidate.isActiveAndEnabled && candidate.targetTexture == null
+                    && BelongsToCurrentScene(candidate.gameObject))
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
         }
 
         // ================================================================ frame
@@ -319,6 +387,12 @@ namespace MaliGo.Sound
 
             if (listenerPending && realtime >= listenerRetryAt)
             {
+                EnsureListener();
+            }
+
+            if (listenerRecheckAt >= 0f && realtime >= listenerRecheckAt)
+            {
+                listenerRecheckAt = -1f;
                 EnsureListener();
             }
 

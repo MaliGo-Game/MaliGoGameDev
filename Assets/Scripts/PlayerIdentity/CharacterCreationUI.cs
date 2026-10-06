@@ -49,6 +49,7 @@ namespace MaliGo.PlayerIdentity
         const float RingWidth = 6f;
         const float MaliTextWidth = 820f;
         const int MaliLinesPerPage = 3;
+        const float MaliCueSize = 48f;
 
         static readonly string[] SkinTones = { "light", "medium", "deep" };
         static readonly Color[] ToneSwatches =
@@ -92,6 +93,7 @@ namespace MaliGo.PlayerIdentity
         readonly List<string> maliPages = new List<string>();
         int maliPage;
         Text maliText;
+        Image maliCue;
         float typed;
         float pauseLeft;
         bool pageDone;
@@ -113,6 +115,8 @@ namespace MaliGo.PlayerIdentity
 
             BuildShell();
             ShowScreen(0);
+            // Android back (Escape) goes to the previous screen; no modal is ever open here.
+            UiModal.BackWithNoModal += OnBack;
         }
 
         void Start()
@@ -126,7 +130,13 @@ namespace MaliGo.PlayerIdentity
 
         void OnDestroy()
         {
+            UiModal.BackWithNoModal -= OnBack;
             UiTween.Stop(this);
+            if (maliCue != null)
+            {
+                UiTween.Stop(maliCue.rectTransform);
+            }
+
             if (canvas != null)
             {
                 Destroy(canvas.gameObject);
@@ -226,6 +236,12 @@ namespace MaliGo.PlayerIdentity
             summaryPlaces = null;
             summaryShown = false;
             maliText = null;
+            if (maliCue != null)
+            {
+                UiTween.Stop(maliCue.rectTransform);
+                maliCue = null;
+            }
+
             maliPages.Clear();
 
             for (int i = content.childCount - 1; i >= 0; i--)
@@ -692,6 +708,14 @@ namespace MaliGo.PlayerIdentity
             maliText.horizontalOverflow = HorizontalWrapMode.Overflow;
             SetTopLeft(maliText.rectTransform, Margin + 520f + 40f, 250f, MaliTextWidth, 220f);
 
+            // The continue cue, as in Mali's dialogue box: a bobbing "down" under the text's right edge once a page
+            // is typed, so a new player knows a tap shows the next page. The last page shows Let's go instead.
+            maliCue = UiKit.IconImage(content, "Cue", "down", MaliCueSize, UiTheme.AccentPrimary);
+            maliCue.raycastTarget = false;
+            SetTopLeft(maliCue.rectTransform, Margin + 520f + 40f + MaliTextWidth - MaliCueSize, 250f + 220f + 16f,
+                MaliCueSize, MaliCueSize);
+            maliCue.gameObject.SetActive(false);
+
             foreach (string template in new[] { MaliParagraph1, MaliParagraph2, MaliParagraph3 })
             {
                 string filled = MaliText.Fill(template, draft);
@@ -708,6 +732,7 @@ namespace MaliGo.PlayerIdentity
             pauseLeft = 0f;
             pageDone = false;
             maliText.text = "";
+            SetMaliCue(false);
             GameEvents.RaiseMaliSpoke();
             if (!MaliGoFeatures.Typewriter || GameSettings.InstantText)
             {
@@ -724,6 +749,7 @@ namespace MaliGo.PlayerIdentity
 
             maliText.text = maliPages[maliPage];
             pageDone = true;
+            SetMaliCue(maliPage < maliPages.Count - 1);
             if (maliPage == maliPages.Count - 1 && !letsGoButton.gameObject.activeSelf)
             {
                 letsGoButton.gameObject.SetActive(true);
@@ -735,6 +761,24 @@ namespace MaliGo.PlayerIdentity
 
                 group.alpha = 0f;
                 UiTween.Fade(group, 1f);
+            }
+        }
+
+        void SetMaliCue(bool visible)
+        {
+            if (maliCue == null)
+            {
+                return;
+            }
+
+            RectTransform rect = maliCue.rectTransform;
+            UiTween.Stop(rect);
+            rect.anchoredPosition = new Vector2(Margin + 520f + 40f + MaliTextWidth - MaliCueSize, -(250f + 220f + 16f));
+            bool show = visible && maliCue.sprite != null;
+            maliCue.gameObject.SetActive(show);
+            if (show)
+            {
+                UiTween.Bob(rect);
             }
         }
 
@@ -831,12 +875,17 @@ namespace MaliGo.PlayerIdentity
             rect.anchoredPosition = new Vector2(0f, bottom);
         }
 
-        /// <summary>A selectable card (Card fill, radius 36, card shadow); selected = Tint fill + 6 u Coin ring.</summary>
+        /// <summary>A selectable card (Card fill, radius 36, card shadow); selected = Tint fill + 6 u AccentPrimary
+        /// ring + a checkmark in the top-right corner (the ring alone in Coin was too faint on Paper).</summary>
         sealed class CardView
         {
+            const float CheckSize = 36f;
+            const float CheckInset = 10f;
+
             public RectTransform Body;
             Image ring;
             Image fill;
+            Image check;
 
             public static CardView Create(RectTransform parent, string name, float x, float y, float w, float h, Action onTap)
             {
@@ -844,7 +893,7 @@ namespace MaliGo.PlayerIdentity
                 SetTopLeft(root, x, y, w, h);
 
                 var view = new CardView();
-                view.ring = UiKit.Panel(root, "Ring", UiTheme.Coin, UiTheme.RadiusCard + RingWidth, false);
+                view.ring = UiKit.Panel(root, "Ring", UiTheme.AccentPrimary, UiTheme.RadiusCard + RingWidth, false);
                 view.ring.rectTransform.offsetMin = new Vector2(-RingWidth, -RingWidth);
                 view.ring.rectTransform.offsetMax = new Vector2(RingWidth, RingWidth);
                 view.ring.raycastTarget = false;
@@ -864,6 +913,15 @@ namespace MaliGo.PlayerIdentity
                     UiKit.NotifyButtonClicked();
                     onTap?.Invoke();
                 });
+
+                // A sibling after the fill, so it draws above everything placed in Body; the card layouts above
+                // keep the top-right corner clear.
+                view.check = UiKit.IconImage(root, "Check", "checkmark", CheckSize, UiTheme.AccentPrimary);
+                RectTransform checkRect = view.check.rectTransform;
+                checkRect.anchorMin = checkRect.anchorMax = checkRect.pivot = new Vector2(1f, 1f);
+                checkRect.anchoredPosition = new Vector2(-CheckInset, -CheckInset);
+                view.check.raycastTarget = false;
+                view.check.enabled = false;
                 return view;
             }
 
@@ -871,6 +929,7 @@ namespace MaliGo.PlayerIdentity
             {
                 fill.color = selected ? UiTheme.Tint : UiTheme.Card;
                 ring.enabled = selected;
+                check.enabled = selected && check.sprite != null;
             }
         }
     }

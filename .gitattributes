@@ -19,6 +19,8 @@
 *.hlsl                  text linguist-language=hlsl
 *.raytrace              text linguist-language=hlsl
 *.shader                text
+# Windows batch files: always CRLF in the working tree (cmd.exe misparses labels/GOTO in LF files)
+*.bat                   text eol=crlf
 # Unity JSON files
 *.asmdef                unity-json
 *.asmref                unity-json

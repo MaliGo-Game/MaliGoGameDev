@@ -11,12 +11,14 @@ namespace MaliGo.PlayerIdentity
         public const string SaveFileName = "player_data.json";
         public const string BackupSuffix = ".bak";
         public const string TempSuffix = ".tmp";
+        public const string CorruptSuffix = ".corrupt";
 
         public static PlayerDataManager Instance { get; private set; }
 
         /// <summary>
-        /// True after TryLoad discarded a save from an older version. Character creation shows the
-        /// "MaliGo has been updated" notice once and clears it.
+        /// True after TryLoad discarded a save from an older version, or found a save it could not read at all
+        /// (main file and .bak both unreadable). Character creation shows the "starts fresh" notice once and
+        /// clears it, so a lost save is never a silent fresh start.
         /// </summary>
         public static bool WasResetForUpdate { get; set; }
 
@@ -119,23 +121,38 @@ namespace MaliGo.PlayerIdentity
         }
 
         /// <summary>
-        /// Loads the save (falling back to the .bak copy if the main file does not parse). A save from an
-        /// older version is deleted with its backup and replaced by a new one, and WasResetForUpdate is
-        /// set: nothing is kept. Returns true only when a current save was loaded.
+        /// Loads the save (falling back to the .bak copy if the main file is missing or does not parse). After a
+        /// recovery from .bak the bad main file is moved aside to .corrupt and the recovered data is saved at
+        /// once, so the next Save's File.Replace can never push the bad file over the only good copy. If neither
+        /// file can be read, WasResetForUpdate is set (the player sees the notice). A save from an older version
+        /// is deleted with its backup and replaced by a new one, and WasResetForUpdate is set: nothing is kept.
+        /// Returns true only when a current save was loaded.
         /// </summary>
         public bool TryLoad()
         {
             string path = GetSavePath();
-            if (!File.Exists(path))
+            string backup = path + BackupSuffix;
+            if (!File.Exists(path) && !File.Exists(backup))
             {
                 currentPlayer = PlayerData.CreateNew();
                 return false;
             }
 
-            PlayerData loaded = ReadSave(path) ?? ReadSave(path + BackupSuffix);
+            PlayerData loaded = ReadSave(path);
+            bool fromBackup = false;
             if (loaded == null)
             {
+                loaded = ReadSave(backup);
+                fromBackup = loaded != null;
+            }
+
+            if (loaded == null)
+            {
+                Debug.LogWarning("[PlayerDataManager] Neither the save nor its backup could be read; starting fresh.");
+                MoveAside(path);
+                MoveAside(backup);
                 currentPlayer = PlayerData.CreateNew();
+                WasResetForUpdate = true;
                 return false;
             }
 
@@ -150,8 +167,41 @@ namespace MaliGo.PlayerIdentity
 
             Repair(loaded);
             currentPlayer = loaded;
+            if (fromBackup)
+            {
+                Debug.LogWarning("[PlayerDataManager] The save could not be read; recovered it from the backup.");
+                MoveAside(path);
+                Save(); // no main file now: the temp file is moved into place and .bak is left untouched
+            }
+
             NotifyChanged();
             return true;
+        }
+
+        /// <summary>Renames an unreadable save file to &lt;name&gt;.corrupt (replacing an older one), so it is kept
+        /// for inspection but never rotated into .bak.</summary>
+        static void MoveAside(string path)
+        {
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    return;
+                }
+
+                string target = path + CorruptSuffix;
+                if (File.Exists(target))
+                {
+                    File.Delete(target);
+                }
+
+                File.Move(path, target);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[PlayerDataManager] Could not move {Path.GetFileName(path)} aside: {ex.Message}");
+                TryDelete(path);
+            }
         }
 
         static PlayerData ReadSave(string path)
@@ -250,13 +300,15 @@ namespace MaliGo.PlayerIdentity
             }
         }
 
-        /// <summary>Deletes the save, its .bak and .tmp, and starts a new player in memory. PlayerPrefs are not touched.</summary>
+        /// <summary>Deletes the save, its .bak, .tmp and .corrupt copies, and starts a new player in memory. PlayerPrefs are not touched.</summary>
         public void DeleteSave()
         {
             string path = GetSavePath();
             TryDelete(path);
             TryDelete(path + BackupSuffix);
             TryDelete(path + TempSuffix);
+            TryDelete(path + CorruptSuffix);
+            TryDelete(path + BackupSuffix + CorruptSuffix);
 
             currentPlayer = PlayerData.CreateNew();
             GameEvents.ClearPendingMoneyChanged();

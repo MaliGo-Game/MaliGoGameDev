@@ -48,6 +48,7 @@ namespace MaliGo.UI
         Button saveButton;
         readonly List<Image> planCards = new List<Image>();
         readonly List<Image> planRings = new List<Image>();
+        readonly List<Image> planChecks = new List<Image>();
         float layoutWidth = -1f;
 
         // Screen B typing.
@@ -97,8 +98,10 @@ namespace MaliGo.UI
             float width = safeRoot.rect.width;
             if (width > 0f && !Mathf.Approximately(width, layoutWidth))
             {
+                // A width change (often the first frame after Show) rebuilds the current screen in place: no chime,
+                // finished typing stays finished, a picked plan stays picked.
                 Layout(width);
-                ShowScreen(current);
+                ShowScreen(current, true);
             }
         }
 
@@ -114,6 +117,8 @@ namespace MaliGo.UI
             Layout(safeRoot.rect.width > 0f ? safeRoot.rect.width : UiTheme.ReferenceWidth);
             UiModal.Push(this, Back);
             ShowScreen(0);
+            // Once per Show (Â§5.4.9), not in BuildWeek, which a layout rebuild may run again.
+            GameEvents.RaiseSoundRequested("day_end_chime");
         }
 
         /// <summary>Closes and pops (no callback).</summary>
@@ -137,8 +142,9 @@ namespace MaliGo.UI
             }
         }
 
-        void ShowScreen(int index)
+        void ShowScreen(int index, bool rebuild = false)
         {
+            bool keepTyped = rebuild && index == 1 && current == 1 && (typingDone || typingSkip);
             current = index;
             if (typing != null)
             {
@@ -155,7 +161,7 @@ namespace MaliGo.UI
             switch (index)
             {
                 case 0: BuildWeek(); break;
-                case 1: BuildNoticed(); break;
+                case 1: BuildNoticed(keepTyped); break;
                 case 2: BuildPlan(); break;
                 default: BuildClose(); break;
             }
@@ -165,7 +171,6 @@ namespace MaliGo.UI
 
         void BuildWeek()
         {
-            GameEvents.RaiseSoundRequested("day_end_chime");
             ChapterSummary s = ChapterReflection.Summary(data);
             float width = right.rect.width > 0f ? right.rect.width : 1187f;
             float y = 0f;
@@ -264,7 +269,7 @@ namespace MaliGo.UI
 
         // ================================================================ screen B: what Mali noticed
 
-        void BuildNoticed()
+        void BuildNoticed(bool alreadyTyped)
         {
             float width = right.rect.width > 0f ? right.rect.width : 1187f;
             Add(ChapterReflection.NoticedTitle, UiTheme.Title, UiTheme.TextPrimary, 0f, 0f, width, 72f);
@@ -290,7 +295,7 @@ namespace MaliGo.UI
             nextB = NextButton("Next", () => ShowScreen(2), 1000f - 144f - 0f, false);
             nextB.gameObject.SetActive(false);
             typingDone = false;
-            typingSkip = false;
+            typingSkip = alreadyTyped; // a rebuild after the lines were typed (or skipped) shows them at once
             typing = StartCoroutine(TypeNoticed(width));
         }
 
@@ -379,11 +384,12 @@ namespace MaliGo.UI
 
             planCards.Clear();
             planRings.Clear();
+            planChecks.Clear();
             float y = 88f + 120f;
             foreach (PaydayPlan plan in PaydayPlans.All)
             {
                 string id = plan.id;
-                Image ring = UiKit.Panel(screen, "Ring " + id, UiTheme.Coin, UiTheme.RadiusCard, false);
+                Image ring = UiKit.Panel(screen, "Ring " + id, UiTheme.AccentPrimary, UiTheme.RadiusCard, false);
                 ring.raycastTarget = false;
                 SetTopLeft(ring.rectTransform, 0f, y, width, 144f);
                 ring.enabled = false;
@@ -391,12 +397,20 @@ namespace MaliGo.UI
                 cardImage.raycastTarget = true;
                 SetTopLeft(cardImage.rectTransform, 6f, y + 6f, width - 12f, 132f);
                 Text text = UiKit.Label(cardImage.rectTransform, "Text", "", UiTheme.Body, UiTheme.TextPrimary, TextAnchor.MiddleLeft);
+                // The right 96 u hold the selected checkmark, so the text wraps short of it.
                 text.rectTransform.offsetMin = new Vector2(30f, 0f);
-                text.rectTransform.offsetMax = new Vector2(-30f, 0f);
-                UiTextLayout.WrapKeepingAmounts(text, plan.text, width - 72f);
+                text.rectTransform.offsetMax = new Vector2(-96f, 0f);
+                UiTextLayout.WrapKeepingAmounts(text, plan.text, width - 138f);
+                Image check = UiKit.IconImage(cardImage.rectTransform, "Check", "checkmark", 48f, UiTheme.AccentPrimary);
+                RectTransform checkRect = check.rectTransform;
+                checkRect.anchorMin = checkRect.anchorMax = checkRect.pivot = new Vector2(1f, 0.5f);
+                checkRect.anchoredPosition = new Vector2(-30f, 0f);
+                check.raycastTarget = false;
+                check.enabled = false;
                 AddButton(cardImage.gameObject, cardImage, () => Pick(id));
                 planCards.Add(cardImage);
                 planRings.Add(ring);
+                planChecks.Add(check);
                 y += 144f + 20f;
             }
 
@@ -405,6 +419,11 @@ namespace MaliGo.UI
             saveButton.interactable = false;
             Button notNow = UiKit.TextButton(screen, "Not now", NotNow, 280f);
             Place((RectTransform)notNow.transform, new Vector2(1f, 1f), new Vector2(width - 400f - 20f - 140f, -(y + 10f + 72f)));
+
+            if (!string.IsNullOrEmpty(pickedPlan))
+            {
+                Pick(pickedPlan); // a layout rebuild keeps the pick
+            }
         }
 
         void Pick(string id)
@@ -415,6 +434,10 @@ namespace MaliGo.UI
                 bool selected = PaydayPlans.All[i].id == id;
                 planCards[i].color = selected ? UiTheme.Tint : UiTheme.Card;
                 planRings[i].enabled = selected;
+                if (i < planChecks.Count)
+                {
+                    planChecks[i].enabled = selected && planChecks[i].sprite != null;
+                }
             }
 
             if (saveButton != null)

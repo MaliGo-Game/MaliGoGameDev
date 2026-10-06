@@ -1,715 +1,877 @@
+using System;
 using System.Collections.Generic;
+using MaliGo.Core;
 using MaliGo.Data;
+using MaliGo.Economy;
+using MaliGo.Scenarios;
+using MaliGo.Settings;
+using MaliGo.UI;
+using MaliGo.UI.Kit;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 namespace MaliGo.PlayerIdentity
 {
     /// <summary>
-    /// Multi-step character creation flow: name, appearance, financial mirror, confirmation.
+    /// Character creation (DESIGN_SPEC §1.1, §4.6, §5.4.13; sort 0): five screens, no financial questions beyond
+    /// the two profile taps.
+    /// 1 the promise and the name (Next disabled while the name is empty; the old-save notice when
+    ///   <c>PlayerDataManager.WasResetForUpdate</c>, then the flag is cleared);
+    /// 2 "Pick your look": six looks (two builds x light/medium/deep) beside a turning <see cref="LookPreview"/>;
+    /// 3 the two profile taps, then "We've built your week around where your money goes." and the first three
+    ///   places from <c>ChapterSchedule.WeekPlaces</c>; Next needs a pick in both rows and runs
+    ///   <c>SpendingProfiles.SetFromOnboarding</c> (skipped when <c>MaliGoFeatures.ProfileTaps</c> is off: the
+    ///   default profile is kept);
+    /// 4 the savings goal (<c>GoalPresets</c>);
+    /// 5 Mali's three paragraphs, typed and paginated at 3 lines; Let's go sets <c>isCharacterCreated</c> and
+    ///   <c>hasMetMali</c>, runs <c>ChapterFlow.StartChapter(data, 1)</c>, saves and loads the world.
     /// </summary>
     public class CharacterCreationUI : MonoBehaviour
     {
-        static readonly Color MossGreen = new Color(0.031f, 0.478f, 0.094f);
-        static readonly Color Sage = new Color(0.788f, 0.937f, 0.706f);
-        static readonly Color Cream = new Color(0.976f, 1.000f, 0.965f);
-        static readonly Color GoldenAmber = new Color(0.875f, 0.643f, 0.392f);
-        static readonly Color DeepPanel = new Color(0.059f, 0.369f, 0.180f, 0.95f);
+        // Mali's paragraphs (§1.1 0:40). Kept here, not in OnboardingCopy (§4.6).
+        public const string MaliParagraph1 = "Hi {name}, I'm Mali. It's the week before payday: R600 in your pocket and R400 in savings.";
+        public const string MaliParagraph2 = "You're saving for your {goalName}: R{goalTarget}. The R150 shift on the main road opens once the day's first thing is sorted. It takes 60 of your 100 energy.";
+        public const string MaliParagraph3 = "I won't tell you what to do. I'll show you where your money went, every night.";
 
-        readonly Dictionary<string, string> appearanceSelections = new Dictionary<string, string>();
-        readonly FinancialMirrorAnswers mirrorAnswers = new FinancialMirrorAnswers();
+        const int ScreenName = 1;
+        const int ScreenLook = 2;
+        const int ScreenProfile = 3;
+        const int ScreenGoal = 4;
+        const int ScreenMali = 5;
+
+        const float SheetWidth = 1500f;
+        const float SheetHeight = 880f;
+        const float Margin = 60f;
+        const float TextWidth = 1380f;
+        const float ButtonMargin = 40f;
+        const float NavButtonWidth = 320f;
+        const float LetsGoWidth = 400f;
+        const float RingWidth = 6f;
+        const float MaliTextWidth = 820f;
+        const int MaliLinesPerPage = 3;
+
+        static readonly string[] SkinTones = { "light", "medium", "deep" };
+        static readonly Color[] ToneSwatches =
+        {
+            new Color(198f / 255f, 140f / 255f, 100f / 255f),
+            new Color(150f / 255f, 96f / 255f, 62f / 255f),
+            new Color(96f / 255f, 60f / 255f, 40f / 255f)
+        };
+
+        readonly List<int> screens = new List<int>();
+        int screenIndex;
+
+        PlayerData draft;
+        string draftName = "";
+        int lookIndex;
+        string focusPick;
+        string travelPick;
+        string goalPick;
 
         Canvas canvas;
-        Font uiFont;
-        GameObject stepRoot;
-        InputField nameInput;
-        Text stepIndicatorText;
-        Text titleText;
-        Text bodyText;
-        Text errorText;
+        RectTransform sheet;
+        RectTransform dots;
+        RectTransform content;
+        Button backButton;
         Button nextButton;
+        Button letsGoButton;
+        InputField nameInput;
+        LookPreview lookPreview;
+        PlayerCharacterCatalog catalog;
+        bool catalogLoaded;
+        readonly List<CardView> lookCards = new List<CardView>();
+        readonly List<CardView> focusCards = new List<CardView>();
+        readonly List<CardView> travelCards = new List<CardView>();
+        readonly List<CardView> goalCards = new List<CardView>();
+        CanvasGroup summaryGroup;
+        Text summaryPlaces;
+        bool summaryShown;
+        bool completing;
 
-        PlayerData draftPlayer;
-        int currentStep;
+        // Screen 5 typewriter.
+        readonly List<string> maliPages = new List<string>();
+        int maliPage;
+        Text maliText;
+        float typed;
+        float pauseLeft;
+        bool pageDone;
 
         void Awake()
         {
             GameFlowController.EnsurePlayerDataManager();
-            draftPlayer = PlayerData.CreateNew();
-            uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf")
-                     ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
-            BuildCanvas();
-            ShowStep(0);
-        }
+            draft = PlayerData.CreateNew();
 
-        void BuildCanvas()
-        {
-            var canvasObj = new GameObject("CharacterCreation_Canvas");
-            canvas = canvasObj.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            var scaler = canvasObj.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920, 1080);
-            canvasObj.AddComponent<GraphicRaycaster>();
-
-            var bg = CreatePanel(canvasObj.transform, "Background", Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero, MossGreen);
-
-            var panel = CreatePanel(bg.transform, "MainPanel", new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-420f, -280f), new Vector2(420f, 280f), DeepPanel);
-
-            stepIndicatorText = CreateText(panel.transform, "StepIndicator", new Vector2(24f, -20f), new Vector2(772f, 28f), "Step 1 of 4", 16, Sage, FontStyle.Normal);
-            titleText = CreateText(panel.transform, "Title", new Vector2(24f, -52f), new Vector2(772f, 44f), "", 30, Cream, FontStyle.Bold);
-            bodyText = CreateText(panel.transform, "Body", new Vector2(24f, -104f), new Vector2(772f, 60f), "", 18, Cream, FontStyle.Normal);
-            errorText = CreateText(panel.transform, "Error", new Vector2(24f, -420f), new Vector2(772f, 28f), "", 16, GoldenAmber, FontStyle.Italic);
-
-            stepRoot = new GameObject("StepContent");
-            stepRoot.transform.SetParent(panel.transform, false);
-            var stepRect = stepRoot.AddComponent<RectTransform>();
-            stepRect.anchorMin = new Vector2(0f, 0f);
-            stepRect.anchorMax = new Vector2(1f, 1f);
-            stepRect.offsetMin = new Vector2(24f, 96f);
-            stepRect.offsetMax = new Vector2(-24f, -170f);
-
-            CreateButton(panel.transform, "BackButton", new Vector2(24f, 24f), new Vector2(140f, 48f), "Back", Sage, OnBackClicked);
-            nextButton = CreateButton(panel.transform, "NextButton", new Vector2(656f, 24f), new Vector2(140f, 48f), "Next", GoldenAmber, OnNextClicked);
-
-            MaliGo.UI.EventSystemUtility.EnsureEventSystem();
-        }
-
-        void ShowStep(int step)
-        {
-            currentStep = step;
-            ClearStepRoot();
-            errorText.text = string.Empty;
-            stepIndicatorText.text = $"Step {step + 1} of 4";
-
-            switch (step)
+            screens.Add(ScreenName);
+            screens.Add(ScreenLook);
+            if (MaliGoFeatures.ProfileTaps)
             {
-                case 0:
-                    ShowNameStep();
-                    break;
-                case 1:
-                    ShowAppearanceStep();
-                    break;
-                case 2:
-                    ShowFinancialMirrorStep();
-                    break;
-                case 3:
-                    ShowCompletionStep();
-                    break;
+                screens.Add(ScreenProfile);
             }
 
-            if (nextButton != null)
+            screens.Add(ScreenGoal);
+            screens.Add(ScreenMali);
+
+            BuildShell();
+            ShowScreen(0);
+        }
+
+        void Start()
+        {
+            if (PlayerDataManager.WasResetForUpdate)
             {
-                var label = nextButton.GetComponentInChildren<Text>();
-                if (label != null)
-                {
-                    label.text = step >= 3 ? "Begin Journey" : "Next";
-                }
+                NoticeBanner.Show(OnboardingCopy.UpdatedNotice);
+                PlayerDataManager.WasResetForUpdate = false;
             }
         }
 
-        void ShowNameStep()
+        void OnDestroy()
         {
-            titleText.text = "What should we call you?";
-            bodyText.text = "Enter the name you'd like to use on your MaliGo journey.";
-
-            var inputRoot = CreatePanel(stepRoot.transform, "NameInputRoot", new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -80f), new Vector2(0f, -20f), new Color(0f, 0f, 0f, 0.25f));
-            nameInput = CreateInputField(inputRoot.transform, draftPlayer.characterName, "Your name");
-        }
-
-        void ShowAppearanceStep()
-        {
-            titleText.text = "Create your character";
-            bodyText.text = "Choose how you'd like to appear. Visual assets will expand in a future update.";
-
-            var options = new (string key, string label, string[] choices)[]
+            UiTween.Stop(this);
+            if (canvas != null)
             {
-                ("skinTone", "Skin tone", new[] { "light", "medium", "deep" }),
-                ("hairstyle", "Hairstyle", new[] { "short", "medium", "long", "bald" }),
-                ("hairColor", "Hair colour", new[] { "black", "brown", "blonde", "red" }),
-                ("clothing", "Clothing", new[] { "casual", "smart", "sporty" }),
-                ("accessories", "Accessories", new[] { "none", "glasses", "hat", "backpack" }),
-                ("genderPresentation", "Presentation", new[] { "feminine", "masculine", "neutral" }),
-                ("bodyType", "Body type", new[] { "slim", "average", "broad" })
-            };
-
-            float y = 0f;
-            foreach (var option in options)
-            {
-                if (!appearanceSelections.ContainsKey(option.key))
-                {
-                    appearanceSelections[option.key] = option.choices[0];
-                }
-
-                CreateText(stepRoot.transform, $"Label_{option.key}", new Vector2(0f, y), new Vector2(220f, 28f), option.label, 16, Sage, FontStyle.Bold);
-                CreateDropdown(stepRoot.transform, option.key, new Vector2(230f, y), new Vector2(500f, 32f), option.choices, appearanceSelections[option.key]);
-                y -= 44f;
+                Destroy(canvas.gameObject);
             }
         }
 
-        void ShowFinancialMirrorStep()
-        {
-            titleText.text = "Let's understand your financial life";
-            bodyText.text = "Answer honestly — this helps tailor your experience. Your answers stay private.";
+        int CurrentScreen => screens[screenIndex];
 
-            float y = 0f;
-            CreateLifeChapterSelector(ref y);
-            CreateDropdownRow("Income type", "incomeType", ref y, new[] { "salary", "part_time", "allowance", "self_employed", "mixed" }, mirrorAnswers.incomeType);
-            CreateDropdownRow("Spending style", "spendingBehaviour", ref y, new[] { "careful", "balanced", "impulsive" }, mirrorAnswers.spendingBehaviour);
-            CreateDropdownRow("Saving habit", "savingBehaviour", ref y, new[] { "consistent", "sometimes", "rarely" }, mirrorAnswers.savingBehaviour);
-            CreateDropdownRow("Primary goal", "primaryGoal", ref y, new[] { "emergency_fund", "debt", "home", "invest", "education" }, mirrorAnswers.primaryGoal);
-            CreateDropdownRow("Risk comfort", "riskTolerance", ref y, new[] { "conservative", "moderate", "aggressive" }, mirrorAnswers.riskTolerance);
-            CreateDropdownRow("Biggest challenge", "primaryChallenge", ref y, new[] { "budgeting", "debt", "saving", "investing", "income" }, mirrorAnswers.primaryChallenge);
-            CreateConfidenceSlider(ref y);
+        // ================================================================ shell
+
+        void BuildShell()
+        {
+            canvas = UiCanvasFactory.Create("CharacterCreation_Canvas", UiTheme.Sort.CharacterCreation, transform,
+                out RectTransform safeRoot);
+            UiCanvasFactory.FullBleed(canvas, "Backdrop", UiTheme.Inverse);
+
+            Image sheetImage = UiKit.Panel(safeRoot, "Sheet", UiTheme.Paper, UiTheme.RadiusSheet, true);
+            sheetImage.raycastTarget = true;
+            sheet = sheetImage.rectTransform;
+            sheet.anchorMin = sheet.anchorMax = sheet.pivot = new Vector2(0.5f, 0.5f);
+            sheet.sizeDelta = new Vector2(SheetWidth, SheetHeight);
+
+            content = UiKit.Rect(sheet, "Content");
+            dots = UiKit.Rect(sheet, "Dots");
+
+            backButton = UiKit.SecondaryButton(sheet, OnboardingCopy.BackButton, OnBack, NavButtonWidth);
+            var backRect = (RectTransform)backButton.transform;
+            backRect.anchorMin = backRect.anchorMax = backRect.pivot = new Vector2(0f, 0f);
+            backRect.anchoredPosition = new Vector2(ButtonMargin, ButtonMargin);
+
+            nextButton = UiKit.PrimaryButton(sheet, OnboardingCopy.NextButton, OnNext, NavButtonWidth);
+            var nextRect = (RectTransform)nextButton.transform;
+            nextRect.anchorMin = nextRect.anchorMax = nextRect.pivot = new Vector2(1f, 0f);
+            nextRect.anchoredPosition = new Vector2(-ButtonMargin, ButtonMargin);
+
+            letsGoButton = UiKit.PrimaryButton(sheet, OnboardingCopy.LetsGoButton, Complete, LetsGoWidth);
+            var goRect = (RectTransform)letsGoButton.transform;
+            goRect.anchorMin = goRect.anchorMax = goRect.pivot = new Vector2(1f, 0f);
+            goRect.anchoredPosition = new Vector2(-ButtonMargin, ButtonMargin);
+            letsGoButton.gameObject.SetActive(false);
         }
 
-        void ShowCompletionStep()
+        void BuildDots()
         {
-            titleText.text = "Your journey begins";
-            bodyText.text = "Review your profile, then enter MaliGo World.";
-
-            var profile = FinancialMirrorCalculator.Calculate(mirrorAnswers);
-            string summary =
-                $"Name: {draftPlayer.characterName}\n" +
-                $"Life chapter: {FormatLifeChapter(mirrorAnswers.lifeChapter)}\n" +
-                $"Primary goal: {FormatToken(profile.primaryGoal)}\n" +
-                $"Confidence: {profile.financialConfidence}/5\n\n" +
-                "You're ready to explore your neighbourhood and build healthier money habits.";
-
-            CreateText(stepRoot.transform, "Summary", new Vector2(0f, 0f), new Vector2(760f, 280f), summary, 20, Cream, FontStyle.Normal);
-        }
-
-        void CreateLifeChapterSelector(ref float y)
-        {
-            CreateText(stepRoot.transform, "LifeChapterLabel", new Vector2(0f, y), new Vector2(220f, 28f), "Life chapter", 16, Sage, FontStyle.Bold);
-
-            var chapters = new[]
+            for (int i = dots.childCount - 1; i >= 0; i--)
             {
-                LifeChapter.STUDENT,
-                LifeChapter.YOUNG_PROFESSIONAL,
-                LifeChapter.ESTABLISHED_ADULT,
-                LifeChapter.WEALTH_BUILDER,
-                LifeChapter.FINANCIAL_INDEPENDENCE
-            };
-
-            var labels = new List<string>();
-            foreach (var chapter in chapters)
-            {
-                labels.Add(FormatLifeChapter(chapter));
+                Destroy(dots.GetChild(i).gameObject);
             }
 
-            CreateDropdown(stepRoot.transform, "lifeChapter", new Vector2(230f, y), new Vector2(500f, 32f), labels.ToArray(), FormatLifeChapter(mirrorAnswers.lifeChapter));
-            y -= 44f;
+            const float size = 20f;
+            const float gap = 20f;
+            int count = screens.Count;
+            float total = count * size + (count - 1) * gap;
+            for (int i = 0; i < count; i++)
+            {
+                Image dot = UiKit.SpriteImage(dots, "Dot " + (i + 1), UiKit.Circle, size,
+                    i == screenIndex ? UiTheme.AccentPrimary : UiTheme.BorderSubtle);
+                RectTransform rect = dot.rectTransform;
+                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+                rect.pivot = new Vector2(0f, 1f);
+                rect.anchoredPosition = new Vector2(-total * 0.5f + i * (size + gap), -40f);
+            }
         }
 
-        void CreateDropdownRow(string label, string key, ref float y, string[] options, string current)
+        void ShowScreen(int index)
         {
-            CreateText(stepRoot.transform, $"Label_{key}", new Vector2(0f, y), new Vector2(220f, 28f), label, 16, Sage, FontStyle.Bold);
-            CreateDropdown(stepRoot.transform, key, new Vector2(230f, y), new Vector2(500f, 32f), options, current);
-            y -= 44f;
+            screenIndex = Mathf.Clamp(index, 0, screens.Count - 1);
+            ClearContent();
+            BuildDots();
+
+            int screen = CurrentScreen;
+            backButton.gameObject.SetActive(screen != ScreenName);
+            nextButton.gameObject.SetActive(screen != ScreenMali);
+            letsGoButton.gameObject.SetActive(false);
+
+            switch (screen)
+            {
+                case ScreenName: BuildNameScreen(); break;
+                case ScreenLook: BuildLookScreen(); break;
+                case ScreenProfile: BuildProfileScreen(); break;
+                case ScreenGoal: BuildGoalScreen(); break;
+                case ScreenMali: BuildMaliScreen(); break;
+            }
+
+            UpdateNext();
         }
 
-        void CreateConfidenceSlider(ref float y)
+        void ClearContent()
         {
-            CreateText(stepRoot.transform, "ConfidenceLabel", new Vector2(0f, y), new Vector2(220f, 28f), "Financial confidence", 16, Sage, FontStyle.Bold);
+            lookCards.Clear();
+            focusCards.Clear();
+            travelCards.Clear();
+            goalCards.Clear();
+            nameInput = null;
+            lookPreview = null;
+            summaryGroup = null;
+            summaryPlaces = null;
+            summaryShown = false;
+            maliText = null;
+            maliPages.Clear();
 
-            var sliderObj = new GameObject("ConfidenceSlider");
-            sliderObj.transform.SetParent(stepRoot.transform, false);
-            var rect = sliderObj.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0f, 1f);
-            rect.anchorMax = new Vector2(0f, 1f);
-            rect.pivot = new Vector2(0f, 1f);
-            rect.anchoredPosition = new Vector2(230f, y);
-            rect.sizeDelta = new Vector2(420f, 24f);
-
-            var bg = sliderObj.AddComponent<Image>();
-            bg.color = new Color(0f, 0f, 0f, 0.3f);
-
-            var fillArea = new GameObject("Fill Area");
-            fillArea.transform.SetParent(sliderObj.transform, false);
-            var fillAreaRect = fillArea.AddComponent<RectTransform>();
-            fillAreaRect.anchorMin = Vector2.zero;
-            fillAreaRect.anchorMax = Vector2.one;
-            fillAreaRect.offsetMin = new Vector2(8f, 6f);
-            fillAreaRect.offsetMax = new Vector2(-8f, -6f);
-
-            var fill = new GameObject("Fill");
-            fill.transform.SetParent(fillArea.transform, false);
-            var fillRect = fill.AddComponent<RectTransform>();
-            fillRect.anchorMin = Vector2.zero;
-            fillRect.anchorMax = Vector2.one;
-            fillRect.offsetMin = Vector2.zero;
-            fillRect.offsetMax = Vector2.zero;
-            fill.AddComponent<Image>().color = GoldenAmber;
-
-            var handleArea = new GameObject("Handle Slide Area");
-            handleArea.transform.SetParent(sliderObj.transform, false);
-            var handleAreaRect = handleArea.AddComponent<RectTransform>();
-            handleAreaRect.anchorMin = Vector2.zero;
-            handleAreaRect.anchorMax = Vector2.one;
-            handleAreaRect.offsetMin = new Vector2(8f, 0f);
-            handleAreaRect.offsetMax = new Vector2(-8f, 0f);
-
-            var handle = new GameObject("Handle");
-            handle.transform.SetParent(handleArea.transform, false);
-            var handleRect = handle.AddComponent<RectTransform>();
-            handleRect.sizeDelta = new Vector2(18f, 18f);
-            handle.AddComponent<Image>().color = Cream;
-
-            var slider = sliderObj.AddComponent<Slider>();
-            slider.fillRect = fillRect;
-            slider.handleRect = handleRect;
-            slider.targetGraphic = handle.GetComponent<Image>();
-            slider.minValue = 1;
-            slider.maxValue = 5;
-            slider.wholeNumbers = true;
-            slider.value = mirrorAnswers.financialConfidence;
-            slider.onValueChanged.AddListener(v => mirrorAnswers.financialConfidence = Mathf.RoundToInt(v));
-
-            var valueText = CreateText(stepRoot.transform, "ConfidenceValue", new Vector2(660f, y), new Vector2(70f, 28f), $"{mirrorAnswers.financialConfidence}/5", 16, Cream, FontStyle.Normal);
-            slider.onValueChanged.AddListener(v => valueText.text = $"{Mathf.RoundToInt(v)}/5");
-            y -= 44f;
+            for (int i = content.childCount - 1; i >= 0; i--)
+            {
+                Destroy(content.GetChild(i).gameObject);
+            }
         }
 
-        void OnBackClicked()
+        void UpdateNext()
         {
-            if (currentStep == 0)
+            if (nextButton == null)
             {
                 return;
             }
 
-            if (!TryCaptureCurrentStep())
+            bool ok;
+            switch (CurrentScreen)
             {
-                return;
+                case ScreenName: ok = CleanName(nameInput != null ? nameInput.text : draftName).Length > 0; break;
+                case ScreenProfile: ok = focusPick != null && travelPick != null; break;
+                case ScreenGoal: ok = goalPick != null; break;
+                default: ok = true; break;
             }
 
-            ShowStep(currentStep - 1);
+            nextButton.interactable = ok;
         }
 
-        void OnNextClicked()
+        void OnBack()
         {
-            if (!TryCaptureCurrentStep())
+            if (screenIndex == 0 || completing)
             {
                 return;
             }
 
-            if (currentStep >= 3)
-            {
-                CompleteCharacterCreation();
-                return;
-            }
-
-            ShowStep(currentStep + 1);
+            Capture();
+            ShowScreen(screenIndex - 1);
         }
 
-        bool TryCaptureCurrentStep()
+        void OnNext()
         {
-            errorText.text = string.Empty;
-
-            switch (currentStep)
+            if (completing || !nextButton.interactable)
             {
-                case 0:
-                    string name = nameInput != null ? nameInput.text.Trim() : draftPlayer.characterName;
-                    if (string.IsNullOrWhiteSpace(name))
+                return;
+            }
+
+            Capture();
+            switch (CurrentScreen)
+            {
+                case ScreenName:
+                    if (draftName.Length == 0)
                     {
-                        errorText.text = "Please enter a name to continue.";
-                        return false;
+                        return;
                     }
 
-                    draftPlayer.characterName = name;
-                    return true;
+                    draft.characterName = draftName;
+                    break;
+                case ScreenLook:
+                    draft.appearance = AppearanceFor(lookIndex);
+                    break;
+                case ScreenProfile:
+                    if (focusPick == null || travelPick == null)
+                    {
+                        return;
+                    }
 
-                case 1:
-                    draftPlayer.appearance = BuildAppearanceData();
-                    return true;
+                    draft.spendingProfile ??= new SpendingProfile();
+                    SpendingProfiles.SetFromOnboarding(draft.spendingProfile, focusPick, travelPick,
+                        DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                    break;
+                case ScreenGoal:
+                    if (goalPick == null)
+                    {
+                        return;
+                    }
 
-                case 2:
-                    CaptureMirrorAnswersFromUI();
-                    return true;
-
-                default:
-                    return true;
+                    draft.goals = new[] { GoalPresets.CreateGoal(goalPick) };
+                    break;
             }
+
+            ShowScreen(screenIndex + 1);
         }
 
-        void CaptureMirrorAnswersFromUI()
+        void Capture()
         {
-            foreach (var dropdown in stepRoot.GetComponentsInChildren<Dropdown>(true))
+            if (CurrentScreen == ScreenName && nameInput != null)
             {
-                string key = dropdown.gameObject.name.Replace("Dropdown_", string.Empty);
-                string value = dropdown.options[dropdown.value].text;
-
-                switch (key)
-                {
-                    case "lifeChapter":
-                        mirrorAnswers.lifeChapter = ParseLifeChapter(value);
-                        break;
-                    case "incomeType":
-                        mirrorAnswers.incomeType = NormalizeToken(value);
-                        break;
-                    case "spendingBehaviour":
-                        mirrorAnswers.spendingBehaviour = NormalizeToken(value);
-                        break;
-                    case "savingBehaviour":
-                        mirrorAnswers.savingBehaviour = NormalizeToken(value);
-                        break;
-                    case "primaryGoal":
-                        mirrorAnswers.primaryGoal = NormalizeToken(value);
-                        break;
-                    case "riskTolerance":
-                        mirrorAnswers.riskTolerance = NormalizeToken(value);
-                        break;
-                    case "primaryChallenge":
-                        mirrorAnswers.primaryChallenge = NormalizeToken(value);
-                        break;
-                    default:
-                        appearanceSelections[key] = NormalizeToken(value);
-                        break;
-                }
+                draftName = CleanName(nameInput.text);
             }
         }
 
-        AppearanceData BuildAppearanceData()
+        static string CleanName(string raw)
         {
+            string name = (raw ?? "").Trim();
+            if (name.Length > OnboardingCopy.NameMaxLength)
+            {
+                name = name.Substring(0, OnboardingCopy.NameMaxLength).Trim();
+            }
+
+            return name;
+        }
+
+        /// <summary>Style 1-3: feminine light/medium/deep; Style 4-6: masculine light/medium/deep (§4.6).</summary>
+        public static AppearanceData AppearanceFor(int lookIndex)
+        {
+            int i = Mathf.Clamp(lookIndex, 0, 5);
             return new AppearanceData
             {
-                skinTone = GetSelection("skinTone", "medium"),
-                hairstyle = GetSelection("hairstyle", "short"),
-                hairColor = GetSelection("hairColor", "black"),
-                clothing = GetSelection("clothing", "casual"),
-                accessories = GetSelection("accessories", "none"),
-                genderPresentation = GetSelection("genderPresentation", "neutral"),
-                bodyType = GetSelection("bodyType", "average")
+                genderPresentation = i < 3 ? "feminine" : "masculine",
+                skinTone = SkinTones[i % 3]
             };
         }
 
-        string GetSelection(string key, string fallback)
+        void Complete()
         {
-            return appearanceSelections.TryGetValue(key, out var value) ? value : fallback;
-        }
+            if (completing || CurrentScreen != ScreenMali)
+            {
+                return;
+            }
 
-        void CompleteCharacterCreation()
-        {
-            draftPlayer.currentLifeChapter = FinancialMirrorCalculator.DetermineLifeChapter(mirrorAnswers);
-            draftPlayer.financialProfile = FinancialMirrorCalculator.Calculate(mirrorAnswers);
-            draftPlayer.financialStats = FinancialStats.CreateDefaults(draftPlayer.currentLifeChapter);
-            draftPlayer.goals = new[] { CreateGoalFromProfile(draftPlayer.financialProfile) };
-            draftPlayer.isCharacterCreated = true;
+            completing = true;
+            if (string.IsNullOrEmpty(draft.characterName))
+            {
+                draft.characterName = draftName;
+            }
 
-            PlayerDataManager.Instance.SetPlayerData(draftPlayer, saveImmediately: true);
+            draft.appearance ??= AppearanceFor(lookIndex);
+            if (draft.goals == null || draft.goals.Length == 0)
+            {
+                draft.goals = new[] { GoalPresets.CreateGoal(goalPick) };
+            }
+
+            draft.isCharacterCreated = true;
+            draft.hasMetMali = true;
+            ChapterFlow.StartChapter(draft, 1);
+
+            if (PlayerDataManager.Instance != null)
+            {
+                PlayerDataManager.Instance.SetPlayerData(draft, saveImmediately: true);
+            }
+
             GameFlowController.LoadWorldScene();
         }
 
-        static FinancialGoal CreateGoalFromProfile(FinancialProfile profile)
+        // ================================================================ screen 1: promise + name
+
+        void BuildNameScreen()
         {
-            switch (profile.primaryGoal)
+            Text promise = UiKit.Label(content, "Promise", OnboardingCopy.PromiseLine1 + "\n" + OnboardingCopy.PromiseLine2,
+                UiTheme.DisplayTitle, UiTheme.TextPrimary);
+            promise.horizontalOverflow = HorizontalWrapMode.Overflow;
+            SetTopLeft(promise.rectTransform, Margin, 90f, TextWidth, 158f);
+
+            Text question = UiKit.Label(content, "Question", OnboardingCopy.NameQuestion,
+                UiTheme.Body.WithWeight(UiFontWeight.Bold), UiTheme.TextSecondary);
+            SetTopLeft(question.rectTransform, Margin, 288f, TextWidth, 52f);
+
+            nameInput = BuildNameField(content, Margin, 352f);
+            nameInput.text = draftName;
+            nameInput.onValueChanged.AddListener(_ => UpdateNext());
+            UiTween.Delay(this, 0.05f, () =>
             {
-                case "debt":
-                    return new FinancialGoal("goal_debt", "Pay Down Debt", 10000f, 2500f, 150f, "In Progress", "Debt");
-                case "home":
-                    return new FinancialGoal("goal_home", "Home Deposit", 80000f, 12000f, 300f, "In Progress", "Housing");
-                case "invest":
-                    return new FinancialGoal("goal_invest", "Start Investing", 5000f, 800f, 100f, "In Progress", "Investing");
-                case "education":
-                    return new FinancialGoal("goal_education", "Education Fund", 15000f, 2000f, 120f, "In Progress", "Education");
-                default:
-                    return new FinancialGoal("goal_emergency", "Emergency Fund", 10000f, 1500f, 200f, "In Progress", "Safety Net");
+                if (nameInput != null)
+                {
+                    nameInput.Select();
+                    nameInput.ActivateInputField();
+                }
+            });
+        }
+
+        InputField BuildNameField(RectTransform parent, float x, float y)
+        {
+            Image border = UiKit.Panel(parent, "Name field", UiTheme.BorderControl, UiTheme.RadiusButton, false);
+            border.raycastTarget = true;
+            SetTopLeft(border.rectTransform, x, y, 900f, 144f);
+
+            Image fill = UiKit.Panel(border.rectTransform, "Fill", UiTheme.Sunken, UiTheme.RadiusButton - UiTheme.Stroke, false);
+            fill.rectTransform.offsetMin = new Vector2(UiTheme.Stroke, UiTheme.Stroke);
+            fill.rectTransform.offsetMax = new Vector2(-UiTheme.Stroke, -UiTheme.Stroke);
+            fill.raycastTarget = false;
+
+            UiTheme.TextRole role = UiTheme.Body.WithSize(46);
+            Text text = UiKit.Label(border.rectTransform, "Text", "", role, UiTheme.TextPrimary, TextAnchor.MiddleLeft);
+            text.supportRichText = false;
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
+            text.rectTransform.offsetMin = new Vector2(32f, 0f);
+            text.rectTransform.offsetMax = new Vector2(-32f, 0f);
+
+            Text placeholder = UiKit.Label(border.rectTransform, "Placeholder", OnboardingCopy.NamePlaceholder, role,
+                UiTheme.TextMuted, TextAnchor.MiddleLeft);
+            placeholder.rectTransform.offsetMin = new Vector2(32f, 0f);
+            placeholder.rectTransform.offsetMax = new Vector2(-32f, 0f);
+
+            var input = border.gameObject.AddComponent<InputField>();
+            input.targetGraphic = fill;
+            input.textComponent = text;
+            input.placeholder = placeholder;
+            input.characterLimit = OnboardingCopy.NameMaxLength;
+            input.lineType = InputField.LineType.SingleLine;
+            input.contentType = InputField.ContentType.Name;
+            input.caretColor = UiTheme.TextPrimary;
+            input.customCaretColor = true;
+            input.selectionColor = UiTheme.WithAlpha(UiTheme.AccentPrimary, 0.3f);
+            var nav = input.navigation;
+            nav.mode = Navigation.Mode.None;
+            input.navigation = nav;
+            return input;
+        }
+
+        // ================================================================ screen 2: look
+
+        void BuildLookScreen()
+        {
+            AddTitle(OnboardingCopy.LookTitle);
+
+            if (!catalogLoaded)
+            {
+                catalogLoaded = true;
+                try
+                {
+                    catalog = KenneyRuntimeCatalogFactory.LoadCatalog();
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[CharacterCreation] No character catalog for the look preview: " + ex.Message);
+                    catalog = null;
+                }
+            }
+
+            lookPreview = LookPreview.Create(content, catalog, AppearanceFor(lookIndex));
+            const float cardW = 246f;
+            const float cardH = 160f;
+            const float gap = 20f;
+            float gridW = 3f * cardW + 2f * gap;
+            float gridH = 2f * cardH + gap;
+            float gridX;
+            float gridY;
+            if (lookPreview != null)
+            {
+                SetTopLeft(lookPreview.Rect, Margin, 128f, LookPreview.ImageSize, LookPreview.ImageSize);
+                gridX = SheetWidth - Margin - gridW;
+                gridY = 128f + (LookPreview.ImageSize - gridH) * 0.5f;
+            }
+            else
+            {
+                gridX = (SheetWidth - gridW) * 0.5f;
+                gridY = 128f + (LookPreview.ImageSize - gridH) * 0.5f;
+            }
+
+            for (int i = 0; i < 6; i++)
+            {
+                int index = i;
+                float x = gridX + (i % 3) * (cardW + gap);
+                float y = gridY + (i / 3) * (cardH + gap);
+                CardView card = CardView.Create(content, "Look " + (i + 1), x, y, cardW, cardH, () => PickLook(index));
+
+                Image swatch = UiKit.SpriteImage(card.Body, "Swatch", UiKit.Circle, 48f, ToneSwatches[i % 3]);
+                RectTransform swatchRect = swatch.rectTransform;
+                swatchRect.anchorMin = swatchRect.anchorMax = swatchRect.pivot = new Vector2(0.5f, 1f);
+                swatchRect.anchoredPosition = new Vector2(0f, -28f);
+
+                Text label = UiKit.Label(card.Body, "Label", OnboardingCopy.StyleLabel(i + 1), UiTheme.Label,
+                    UiTheme.TextPrimary, TextAnchor.MiddleCenter);
+                SetBottomStretch(label.rectTransform, 24f, 44f);
+                lookCards.Add(card);
+            }
+
+            RefreshCards(lookCards, lookIndex);
+        }
+
+        void PickLook(int index)
+        {
+            lookIndex = Mathf.Clamp(index, 0, 5);
+            RefreshCards(lookCards, lookIndex);
+            draft.appearance = AppearanceFor(lookIndex);
+            if (lookPreview != null)
+            {
+                lookPreview.SetAppearance(draft.appearance);
             }
         }
 
-        void ClearStepRoot()
+        // ================================================================ screen 3: the two profile taps
+
+        void BuildProfileScreen()
         {
-            if (stepRoot == null)
+            UiTheme.TextRole questionRole = UiTheme.Body.WithWeight(UiFontWeight.Bold);
+            const float cardW = 330f;
+            const float cardH = 144f;
+            const float gap = 20f;
+
+            Text q1 = UiKit.Label(content, "Spend question", OnboardingCopy.SpendQuestion, questionRole, UiTheme.TextPrimary);
+            SetTopLeft(q1.rectTransform, Margin, 80f, TextWidth, 52f);
+            for (int i = 0; i < SpendingFocus.All.Length; i++)
+            {
+                ProfileOption option = SpendingFocus.All[i];
+                CardView card = CardView.Create(content, "Focus " + option.id, Margin + i * (cardW + gap), 144f, cardW, cardH,
+                    () => PickFocus(option.id));
+                AddCardLabel(card, option.cardLabel);
+                focusCards.Add(card);
+            }
+
+            Text q2 = UiKit.Label(content, "Travel question", OnboardingCopy.TravelQuestion, questionRole, UiTheme.TextPrimary);
+            SetTopLeft(q2.rectTransform, Margin, 318f, TextWidth, 52f);
+            for (int i = 0; i < TravelMode.All.Length; i++)
+            {
+                ProfileOption option = TravelMode.All[i];
+                CardView card = CardView.Create(content, "Travel " + option.id, Margin + i * (cardW + gap), 382f, cardW, cardH,
+                    () => PickTravel(option.id));
+                AddCardLabel(card, option.cardLabel);
+                travelCards.Add(card);
+            }
+
+            RectTransform summary = UiKit.Rect(content, "Summary");
+            SetTopLeft(summary, Margin, 550f, TextWidth, 96f);
+            summaryGroup = summary.gameObject.AddComponent<CanvasGroup>();
+            summaryGroup.alpha = 0f;
+            summaryGroup.blocksRaycasts = false;
+
+            Text built = UiKit.Label(summary, "Week built", OnboardingCopy.WeekBuiltLine, UiTheme.Body, UiTheme.TextPrimary);
+            SetTopLeft(built.rectTransform, 0f, 0f, TextWidth, 52f);
+            summaryPlaces = UiKit.Label(summary, "Places", "", UiTheme.Label, UiTheme.TextSecondary);
+            SetTopLeft(summaryPlaces.rectTransform, 0f, 52f, TextWidth, 44f);
+
+            RefreshProfile(false);
+        }
+
+        void AddCardLabel(CardView card, string text)
+        {
+            Text label = UiKit.Label(card.Body, "Label", text, UiTheme.Label, UiTheme.TextPrimary, TextAnchor.MiddleCenter);
+            RectTransform rect = label.rectTransform;
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = new Vector2(250f, 100f);
+            rect.anchoredPosition = Vector2.zero;
+        }
+
+        void PickFocus(string id)
+        {
+            focusPick = id;
+            RefreshProfile(true);
+        }
+
+        void PickTravel(string id)
+        {
+            travelPick = id;
+            RefreshProfile(true);
+        }
+
+        void RefreshProfile(bool animate)
+        {
+            RefreshCards(focusCards, IndexOf(SpendingFocus.All, focusPick));
+            RefreshCards(travelCards, IndexOf(TravelMode.All, travelPick));
+
+            bool both = focusPick != null && travelPick != null;
+            if (summaryGroup != null && both)
+            {
+                summaryPlaces.text = string.Join(OnboardingCopy.WeekPlacesSeparator,
+                    ChapterSchedule.WeekPlaces(focusPick, travelPick));
+                if (!summaryShown)
+                {
+                    summaryShown = true;
+                    if (animate)
+                    {
+                        UiTween.Fade(summaryGroup, 1f);
+                    }
+                    else
+                    {
+                        summaryGroup.alpha = 1f;
+                    }
+                }
+            }
+
+            UpdateNext();
+        }
+
+        static int IndexOf(ProfileOption[] options, string id)
+        {
+            if (id == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < options.Length; i++)
+            {
+                if (options[i].id == id)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        // ================================================================ screen 4: goal
+
+        void BuildGoalScreen()
+        {
+            AddTitle(OnboardingCopy.GoalTitle);
+            const float cardW = 560f;
+            const float cardH = 220f;
+            const float gap = 20f;
+            float x0 = (SheetWidth - (2f * cardW + gap)) * 0.5f;
+            const float y0 = 150f;
+
+            for (int i = 0; i < GoalPresets.All.Length; i++)
+            {
+                GoalPreset preset = GoalPresets.All[i];
+                CardView card = CardView.Create(content, "Goal " + preset.id, x0 + (i % 2) * (cardW + gap),
+                    y0 + (i / 2) * (cardH + gap), cardW, cardH, () => PickGoal(preset.id));
+
+                Text title = UiKit.Label(card.Body, "Title", preset.title, UiTheme.Label, UiTheme.TextPrimary);
+                SetTopLeft(title.rectTransform, 36f, 30f, cardW - 72f, 44f);
+                Text target = UiKit.Label(card.Body, "Target", MoneyFormat.Rand(preset.target), UiTheme.HudValue,
+                    UiTheme.TextPrimary);
+                SetTopLeft(target.rectTransform, 36f, 86f, cardW - 72f, 52f);
+                Text caption = UiKit.Label(card.Body, "Caption", OnboardingCopy.GoalSavedCaption, UiTheme.Caption,
+                    UiTheme.TextMuted);
+                SetTopLeft(caption.rectTransform, 36f, 150f, cardW - 72f, 40f);
+                goalCards.Add(card);
+            }
+
+            RefreshGoals();
+        }
+
+        void PickGoal(string id)
+        {
+            goalPick = id;
+            RefreshGoals();
+            UpdateNext();
+        }
+
+        void RefreshGoals()
+        {
+            int selected = -1;
+            for (int i = 0; i < GoalPresets.All.Length; i++)
+            {
+                if (GoalPresets.All[i].id == goalPick)
+                {
+                    selected = i;
+                }
+            }
+
+            RefreshCards(goalCards, selected);
+        }
+
+        // ================================================================ screen 5: Mali
+
+        void BuildMaliScreen()
+        {
+            // The whole content area advances the text; the buttons sit above it.
+            Image tapZone = UiKit.Panel(content, "Tap zone", Color.clear, 1f, false);
+            tapZone.sprite = UiKit.White;
+            tapZone.type = Image.Type.Simple;
+            tapZone.raycastTarget = true;
+            var tap = tapZone.gameObject.AddComponent<Button>();
+            tap.transition = Selectable.Transition.None;
+            var nav = tap.navigation;
+            nav.mode = Navigation.Mode.None;
+            tap.navigation = nav;
+            tap.onClick.AddListener(OnMaliTap);
+
+            Image portrait = UiKit.SpriteImage(content, "Mali", UiKit.MaliPortrait, 520f, Color.white);
+            SetTopLeft(portrait.rectTransform, Margin, 110f, 520f, 520f);
+
+            maliText = UiKit.Label(content, "Mali text", "", UiTheme.Dialogue, UiTheme.TextPrimary);
+            maliText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            SetTopLeft(maliText.rectTransform, Margin + 520f + 40f, 250f, MaliTextWidth, 220f);
+
+            foreach (string template in new[] { MaliParagraph1, MaliParagraph2, MaliParagraph3 })
+            {
+                string filled = MaliText.Fill(template, draft);
+                maliPages.AddRange(UiTextLayout.Paginate(maliText, filled, MaliTextWidth, MaliLinesPerPage));
+            }
+
+            StartMaliPage(0);
+        }
+
+        void StartMaliPage(int page)
+        {
+            maliPage = page;
+            typed = 0f;
+            pauseLeft = 0f;
+            pageDone = false;
+            maliText.text = "";
+            GameEvents.RaiseMaliSpoke();
+            if (!MaliGoFeatures.Typewriter || GameSettings.InstantText)
+            {
+                CompleteMaliPage();
+            }
+        }
+
+        void CompleteMaliPage()
+        {
+            if (maliText == null || maliPage >= maliPages.Count)
             {
                 return;
             }
 
-            for (int i = stepRoot.transform.childCount - 1; i >= 0; i--)
+            maliText.text = maliPages[maliPage];
+            pageDone = true;
+            if (maliPage == maliPages.Count - 1 && !letsGoButton.gameObject.activeSelf)
             {
-                Destroy(stepRoot.transform.GetChild(i).gameObject);
+                letsGoButton.gameObject.SetActive(true);
+                var group = letsGoButton.GetComponent<CanvasGroup>();
+                if (group == null)
+                {
+                    group = letsGoButton.gameObject.AddComponent<CanvasGroup>();
+                }
+
+                group.alpha = 0f;
+                UiTween.Fade(group, 1f);
             }
         }
 
-        static string FormatLifeChapter(LifeChapter chapter)
+        void OnMaliTap()
         {
-            return chapter switch
+            if (maliText == null)
             {
-                LifeChapter.STUDENT => "Student",
-                LifeChapter.YOUNG_PROFESSIONAL => "Young Professional",
-                LifeChapter.ESTABLISHED_ADULT => "Established Adult",
-                LifeChapter.WEALTH_BUILDER => "Wealth Builder",
-                LifeChapter.FINANCIAL_INDEPENDENCE => "Financial Independence",
-                _ => chapter.ToString()
-            };
-        }
+                return;
+            }
 
-        static LifeChapter ParseLifeChapter(string label)
-        {
-            return label switch
+            if (!pageDone)
             {
-                "Student" => LifeChapter.STUDENT,
-                "Young Professional" => LifeChapter.YOUNG_PROFESSIONAL,
-                "Established Adult" => LifeChapter.ESTABLISHED_ADULT,
-                "Wealth Builder" => LifeChapter.WEALTH_BUILDER,
-                "Financial Independence" => LifeChapter.FINANCIAL_INDEPENDENCE,
-                _ => LifeChapter.YOUNG_PROFESSIONAL
-            };
+                CompleteMaliPage();
+            }
+            else if (maliPage < maliPages.Count - 1)
+            {
+                StartMaliPage(maliPage + 1);
+            }
         }
 
-        static string FormatToken(string token)
+        void Update()
         {
-            return token.Replace('_', ' ');
+            if (maliText == null || pageDone || maliPage >= maliPages.Count)
+            {
+                return;
+            }
+
+            string page = maliPages[maliPage];
+            float dt = Time.unscaledDeltaTime;
+            if (pauseLeft > 0f)
+            {
+                pauseLeft -= dt;
+                return;
+            }
+
+            int before = Mathf.FloorToInt(typed);
+            typed += dt * Mathf.Max(1, GameSettings.CharsPerSecond);
+            int count = Mathf.Min(page.Length, Mathf.FloorToInt(typed));
+            if (count > before && count > 0)
+            {
+                char last = page[count - 1];
+                if (last == '.' || last == '!' || last == '?')
+                {
+                    pauseLeft = GameSettings.PauseAfterSentence;
+                }
+                else if (last == ',')
+                {
+                    pauseLeft = GameSettings.PauseAfterComma;
+                }
+            }
+
+            maliText.text = page.Substring(0, count);
+            if (count >= page.Length)
+            {
+                CompleteMaliPage();
+            }
         }
 
-        static string NormalizeToken(string label)
+        // ================================================================ helpers
+
+        void AddTitle(string title)
         {
-            return label.ToLowerInvariant().Replace(' ', '_');
+            Text label = UiKit.Label(content, "Title", title, UiTheme.Title, UiTheme.TextPrimary);
+            label.horizontalOverflow = HorizontalWrapMode.Overflow;
+            SetTopLeft(label.rectTransform, Margin, 60f, TextWidth, 64f);
         }
 
-        GameObject CreatePanel(Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax, Vector2 offsetMin, Vector2 offsetMax, Color color)
+        static void RefreshCards(List<CardView> cards, int selected)
         {
-            var obj = new GameObject(name);
-            obj.transform.SetParent(parent, false);
-            var rect = obj.AddComponent<RectTransform>();
-            rect.anchorMin = anchorMin;
-            rect.anchorMax = anchorMax;
-            rect.offsetMin = offsetMin;
-            rect.offsetMax = offsetMax;
-            obj.AddComponent<Image>().color = color;
-            return obj;
+            for (int i = 0; i < cards.Count; i++)
+            {
+                cards[i].SetSelected(i == selected);
+            }
         }
 
-        Text CreateText(Transform parent, string name, Vector2 pos, Vector2 size, string content, int fontSize, Color color, FontStyle style)
+        static void SetTopLeft(RectTransform rect, float x, float y, float width, float height)
         {
-            var obj = new GameObject(name);
-            obj.transform.SetParent(parent, false);
-            var rect = obj.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0f, 1f);
-            rect.anchorMax = new Vector2(0f, 1f);
-            rect.pivot = new Vector2(0f, 1f);
-            rect.anchoredPosition = pos;
-            rect.sizeDelta = size;
+            if (rect == null)
+            {
+                return;
+            }
 
-            var text = obj.AddComponent<Text>();
-            text.text = content;
-            text.font = uiFont;
-            text.fontSize = fontSize;
-            text.fontStyle = style;
-            text.color = color;
-            text.alignment = TextAnchor.UpperLeft;
-            return text;
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
+            rect.sizeDelta = new Vector2(width, height);
+            rect.anchoredPosition = new Vector2(x, -y);
         }
 
-        Button CreateButton(Transform parent, string name, Vector2 pos, Vector2 size, string label, Color color, UnityEngine.Events.UnityAction onClick)
+        static void SetBottomStretch(RectTransform rect, float bottom, float height)
         {
-            var obj = CreatePanel(parent, name, new Vector2(0f, 0f), new Vector2(0f, 0f), pos, pos + size, color);
-            var rect = obj.GetComponent<RectTransform>();
             rect.anchorMin = new Vector2(0f, 0f);
-            rect.anchorMax = new Vector2(0f, 0f);
-            rect.pivot = new Vector2(0f, 0f);
-            rect.anchoredPosition = pos;
-            rect.sizeDelta = size;
-
-            var button = obj.AddComponent<Button>();
-            button.onClick.AddListener(onClick);
-
-            var text = CreateText(obj.transform, "Label", new Vector2(12f, -8f), new Vector2(size.x - 24f, size.y - 8f), label, 18, Cream, FontStyle.Bold);
-            text.alignment = TextAnchor.MiddleCenter;
-            return button;
+            rect.anchorMax = new Vector2(1f, 0f);
+            rect.pivot = new Vector2(0.5f, 0f);
+            rect.sizeDelta = new Vector2(0f, height);
+            rect.anchoredPosition = new Vector2(0f, bottom);
         }
 
-        InputField CreateInputField(Transform parent, string initialValue, string placeholder)
+        /// <summary>A selectable card (Card fill, radius 36, card shadow); selected = Tint fill + 6 u Coin ring.</summary>
+        sealed class CardView
         {
-            var obj = new GameObject("NameInput");
-            obj.transform.SetParent(parent, false);
-            var rect = obj.AddComponent<RectTransform>();
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.offsetMin = new Vector2(12f, 8f);
-            rect.offsetMax = new Vector2(-12f, -8f);
-            obj.AddComponent<Image>().color = new Color(1f, 1f, 1f, 0.12f);
+            public RectTransform Body;
+            Image ring;
+            Image fill;
 
-            var textObj = new GameObject("Text");
-            textObj.transform.SetParent(obj.transform, false);
-            var textRect = textObj.AddComponent<RectTransform>();
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = new Vector2(10f, 6f);
-            textRect.offsetMax = new Vector2(-10f, -6f);
-            var text = textObj.AddComponent<Text>();
-            text.font = uiFont;
-            text.fontSize = 20;
-            text.color = Cream;
-            text.supportRichText = false;
-
-            var placeholderObj = new GameObject("Placeholder");
-            placeholderObj.transform.SetParent(obj.transform, false);
-            var placeholderRect = placeholderObj.AddComponent<RectTransform>();
-            placeholderRect.anchorMin = Vector2.zero;
-            placeholderRect.anchorMax = Vector2.one;
-            placeholderRect.offsetMin = new Vector2(10f, 6f);
-            placeholderRect.offsetMax = new Vector2(-10f, -6f);
-            var placeholderText = placeholderObj.AddComponent<Text>();
-            placeholderText.text = placeholder;
-            placeholderText.font = uiFont;
-            placeholderText.fontSize = 20;
-            placeholderText.color = new Color(Cream.r, Cream.g, Cream.b, 0.45f);
-            placeholderText.fontStyle = FontStyle.Italic;
-
-            var input = obj.AddComponent<InputField>();
-            input.textComponent = text;
-            input.placeholder = placeholderText;
-            input.text = initialValue ?? string.Empty;
-            return input;
-        }
-
-        void CreateDropdown(Transform parent, string key, Vector2 pos, Vector2 size, string[] options, string current)
-        {
-            var obj = new GameObject($"Dropdown_{key}");
-            obj.transform.SetParent(parent, false);
-            var rect = obj.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0f, 1f);
-            rect.anchorMax = new Vector2(0f, 1f);
-            rect.pivot = new Vector2(0f, 1f);
-            rect.anchoredPosition = pos;
-            rect.sizeDelta = size;
-            obj.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.25f);
-
-            var labelObj = new GameObject("Label");
-            labelObj.transform.SetParent(obj.transform, false);
-            var labelRect = labelObj.AddComponent<RectTransform>();
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            labelRect.offsetMin = new Vector2(10f, 2f);
-            labelRect.offsetMax = new Vector2(-30f, -2f);
-            var label = labelObj.AddComponent<Text>();
-            label.font = uiFont;
-            label.fontSize = 16;
-            label.color = Cream;
-            label.alignment = TextAnchor.MiddleLeft;
-
-            var arrowObj = new GameObject("Arrow");
-            arrowObj.transform.SetParent(obj.transform, false);
-            var arrowRect = arrowObj.AddComponent<RectTransform>();
-            arrowRect.anchorMin = new Vector2(1f, 0.5f);
-            arrowRect.anchorMax = new Vector2(1f, 0.5f);
-            arrowRect.pivot = new Vector2(1f, 0.5f);
-            arrowRect.anchoredPosition = new Vector2(-10f, 0f);
-            arrowRect.sizeDelta = new Vector2(16f, 16f);
-            var arrow = arrowObj.AddComponent<Text>();
-            arrow.text = "▼";
-            arrow.font = uiFont;
-            arrow.fontSize = 14;
-            arrow.color = Sage;
-            arrow.alignment = TextAnchor.MiddleCenter;
-
-            var template = new GameObject("Template");
-            template.transform.SetParent(obj.transform, false);
-            template.SetActive(false);
-            var templateRect = template.AddComponent<RectTransform>();
-            templateRect.anchorMin = new Vector2(0f, 0f);
-            templateRect.anchorMax = new Vector2(1f, 0f);
-            templateRect.pivot = new Vector2(0.5f, 1f);
-            templateRect.anchoredPosition = Vector2.zero;
-            templateRect.sizeDelta = new Vector2(0f, 150f);
-            template.AddComponent<Image>().color = DeepPanel;
-
-            var viewport = new GameObject("Viewport");
-            viewport.transform.SetParent(template.transform, false);
-            var viewportRect = viewport.AddComponent<RectTransform>();
-            viewportRect.anchorMin = Vector2.zero;
-            viewportRect.anchorMax = Vector2.one;
-            viewportRect.offsetMin = Vector2.zero;
-            viewportRect.offsetMax = Vector2.zero;
-            viewport.AddComponent<Mask>().showMaskGraphic = false;
-            viewport.AddComponent<Image>().color = DeepPanel;
-
-            var content = new GameObject("Content");
-            content.transform.SetParent(viewport.transform, false);
-            var contentRect = content.AddComponent<RectTransform>();
-            contentRect.anchorMin = new Vector2(0f, 1f);
-            contentRect.anchorMax = new Vector2(1f, 1f);
-            contentRect.pivot = new Vector2(0.5f, 1f);
-            contentRect.anchoredPosition = Vector2.zero;
-            contentRect.sizeDelta = new Vector2(0f, 28f);
-
-            var item = new GameObject("Item");
-            item.transform.SetParent(content.transform, false);
-            var itemRect = item.AddComponent<RectTransform>();
-            itemRect.anchorMin = new Vector2(0f, 0.5f);
-            itemRect.anchorMax = new Vector2(1f, 0.5f);
-            itemRect.sizeDelta = new Vector2(0f, 28f);
-            var itemToggle = item.AddComponent<Toggle>();
-
-            var itemBg = new GameObject("Item Background");
-            itemBg.transform.SetParent(item.transform, false);
-            var itemBgRect = itemBg.AddComponent<RectTransform>();
-            itemBgRect.anchorMin = Vector2.zero;
-            itemBgRect.anchorMax = Vector2.one;
-            itemBgRect.offsetMin = Vector2.zero;
-            itemBgRect.offsetMax = Vector2.zero;
-            itemBg.AddComponent<Image>().color = new Color(1f, 1f, 1f, 0.08f);
-
-            var itemLabelObj = new GameObject("Item Label");
-            itemLabelObj.transform.SetParent(item.transform, false);
-            var itemLabelRect = itemLabelObj.AddComponent<RectTransform>();
-            itemLabelRect.anchorMin = Vector2.zero;
-            itemLabelRect.anchorMax = Vector2.one;
-            itemLabelRect.offsetMin = new Vector2(10f, 1f);
-            itemLabelRect.offsetMax = new Vector2(-10f, -1f);
-            var itemLabel = itemLabelObj.AddComponent<Text>();
-            itemLabel.font = uiFont;
-            itemLabel.fontSize = 16;
-            itemLabel.color = Cream;
-            itemLabel.alignment = TextAnchor.MiddleLeft;
-
-            itemToggle.targetGraphic = itemBg.GetComponent<Image>();
-            itemToggle.graphic = null;
-
-            var dropdown = obj.AddComponent<Dropdown>();
-            dropdown.targetGraphic = obj.GetComponent<Image>();
-            dropdown.captionText = label;
-            dropdown.itemText = itemLabel;
-            dropdown.template = templateRect;
-            dropdown.options.Clear();
-
-            int selectedIndex = 0;
-            for (int i = 0; i < options.Length; i++)
+            public static CardView Create(RectTransform parent, string name, float x, float y, float w, float h, Action onTap)
             {
-                dropdown.options.Add(new Dropdown.OptionData(options[i]));
-                if (options[i] == current || NormalizeToken(options[i]) == current)
+                RectTransform root = UiKit.Rect(parent, name);
+                SetTopLeft(root, x, y, w, h);
+
+                var view = new CardView();
+                view.ring = UiKit.Panel(root, "Ring", UiTheme.Coin, UiTheme.RadiusCard + RingWidth, false);
+                view.ring.rectTransform.offsetMin = new Vector2(-RingWidth, -RingWidth);
+                view.ring.rectTransform.offsetMax = new Vector2(RingWidth, RingWidth);
+                view.ring.raycastTarget = false;
+                view.ring.enabled = false;
+
+                view.fill = UiKit.Panel(root, "Card", UiTheme.Card, UiTheme.RadiusCard, UiTheme.ShadowCard);
+                view.fill.raycastTarget = true;
+                view.Body = view.fill.rectTransform;
+
+                var button = view.fill.gameObject.AddComponent<Button>();
+                button.transition = Selectable.Transition.None;
+                var nav = button.navigation;
+                nav.mode = Navigation.Mode.None;
+                button.navigation = nav;
+                button.onClick.AddListener(() =>
                 {
-                    selectedIndex = i;
-                }
+                    UiKit.NotifyButtonClicked();
+                    onTap?.Invoke();
+                });
+                return view;
             }
 
-            dropdown.value = selectedIndex;
-            dropdown.RefreshShownValue();
-            dropdown.onValueChanged.AddListener(index =>
+            public void SetSelected(bool selected)
             {
-                string selected = options[index];
-                if (key == "lifeChapter")
-                {
-                    mirrorAnswers.lifeChapter = ParseLifeChapter(selected);
-                }
-                else if (appearanceSelections.ContainsKey(key) || currentStep == 1)
-                {
-                    appearanceSelections[key] = NormalizeToken(selected);
-                }
-                else
-                {
-                    switch (key)
-                    {
-                        case "incomeType": mirrorAnswers.incomeType = NormalizeToken(selected); break;
-                        case "spendingBehaviour": mirrorAnswers.spendingBehaviour = NormalizeToken(selected); break;
-                        case "savingBehaviour": mirrorAnswers.savingBehaviour = NormalizeToken(selected); break;
-                        case "primaryGoal": mirrorAnswers.primaryGoal = NormalizeToken(selected); break;
-                        case "riskTolerance": mirrorAnswers.riskTolerance = NormalizeToken(selected); break;
-                        case "primaryChallenge": mirrorAnswers.primaryChallenge = NormalizeToken(selected); break;
-                    }
-                }
-            });
+                fill.color = selected ? UiTheme.Tint : UiTheme.Card;
+                ring.enabled = selected;
+            }
         }
     }
 }

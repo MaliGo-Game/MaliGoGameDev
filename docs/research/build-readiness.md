@@ -51,7 +51,7 @@ What stops it being a *good* beta build is not the toolchain but packaging hygie
 | Scripting backend / arch | IL2CPP (`scriptingBackend: Android: 1`) / ARM64 only (`AndroidTargetArchitectures: 2`) | `ProjectSettings.asset:270,785-786` | OK. This Unity install ships no Mono player for Android (`MaliGoAndroidSetup.cs:9-12`). Very old 32-bit-only phones can't install it, which is acceptable |
 | Managed stripping | `managedStrippingLevel: {}` = default (Minimal for IL2CPP), `stripEngineCode: 1` | `ProjectSettings.asset:184,790` | Leave as is for the beta. Stripping isn't what drives the size; the AI package is |
 | Minify | Release 0 / Debug 0 | `ProjectSettings.asset:293-294` | OK |
-| Signing | `androidUseCustomKeystore: 0`, keystore name empty | `ProjectSettings.asset:274-275,287` | Produces a **debug-signed** APK using `C:\Users\0geda\.android\debug.keystore` (exists, dated 12 Jul 2026). Fine for sideloading. Updates only install over the old version if they're signed by the same laptop's debug key |
+| Signing | `androidUseCustomKeystore: 0`, keystore name empty | `ProjectSettings.asset:274-275,287` | Produces a **debug-signed** APK using `%USERPROFILE%\.android\debug.keystore` (exists, dated 12 Jul 2026). Fine for sideloading. Updates only install over the old version if they're signed by the same laptop's debug key |
 | Input | `activeInputHandler: 1` (new Input System only) | `ProjectSettings.asset:879` | OK, matches the brief |
 | Graphics API | `m_BuildTargetGraphicsAPIs: []` = automatic (Vulkan, then GLES3 fallback) | `ProjectSettings.asset:497` | OK |
 | Frame pacing | `androidUseSwappy: 1` | `ProjectSettings.asset:72` | OK |
@@ -208,7 +208,7 @@ These are for the build phase. This audit changed nothing.
 - [ ] Unity Editor, Unity Hub-launched Editor and any `Unity.exe` for this project are closed
       (project lock). Check: `tasklist | findstr /i "Unity.exe"` returns nothing.
 - [ ] Toolchain paths exist (verified 3 Oct): `C:\JDK17`,
-      `C:\Users\0geda\AppData\Local\Android\Sdk`, `...\Sdk\ndk\27.2.12479018`. They're
+      `%LOCALAPPDATA%\Android\Sdk`, `...\Sdk\ndk\27.2.12479018`. They're
       hard-coded in `MaliGoAndroidSetup.cs:16-21`; a missing one only logs a warning.
 - [ ] At least about 10 GB free on C: (24.2 GB free now; `Library/` is already 11.1 GB).
 - [ ] Code compiles with zero errors (agents' `dotnet build` check, per the brief §7).
@@ -260,7 +260,7 @@ Removing the AI package (fix 1) should shorten both, though I couldn't measure b
    step 1), `Incompatible Java version` (JDK path wrong; must be `C:\JDK17`), `OutOfMemory` or
    `Java heap space` (close more apps or apply fix 14).
 8. Install on the phone: enable Developer options > USB debugging, then
-   `"C:\Users\0geda\AppData\Local\Android\Sdk\platform-tools\adb.exe" install -r "C:\Temp\MaliGoGameDev\Builds\Android\MaliGo-Beta.apk"`.
+   `"%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe" install -r "C:\Temp\MaliGoGameDev\Builds\Android\MaliGo-Beta.apk"`.
    Or copy the APK to the phone and open it (allow "install unknown apps").
    If install fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the phone has a build signed by
    another machine's debug key. Uninstall first; this erases the save.

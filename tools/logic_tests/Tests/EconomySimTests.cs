@@ -44,6 +44,7 @@ public static class EconomySimTests
         { "stokvel_decision", new[] { "join" } },
         { "windfall", new[] { "all_to_savings" } },
         { "debit_order_check", new[] { "cancel_gym" } },
+        { "kota_run", new[] { "cook_home" } },
     };
 
     static readonly Dictionary<string, string[]> Middle = new Dictionary<string, string[]>
@@ -62,6 +63,7 @@ public static class EconomySimTests
         { "stokvel_decision", new[] { "join" } },
         { "windfall", new[] { "half_half" } },
         { "debit_order_check", new[] { "leave_it" } },
+        { "kota_run", new[] { "share_kota" } },
     };
 
     static readonly Dictionary<string, string[]> Comfort = new Dictionary<string, string[]>
@@ -80,6 +82,7 @@ public static class EconomySimTests
         { "stokvel_decision", new[] { "join" } },
         { "windfall", new[] { "keep_cash" } },
         { "debit_order_check", new[] { "move_to_cash" } },
+        { "kota_run", new[] { "full_kota" } },
     };
 
     static Dictionary<string, string[]> ComfortLoan()
@@ -108,21 +111,21 @@ public static class EconomySimTests
     /// <summary>Spec 3.2 "Every profile": end totals (cash + savings, night of Day 7) per profile, in Styles order.</summary>
     static readonly Dictionary<string, int[]> EndTotals = new Dictionary<string, int[]>
     {
-        { "food/taxi", new[] { 854, 545, 615, 415, 350, 1255 } },
-        { "food/ehailing", new[] { 790, 451, 615, 415, 350, 1255 } },
-        { "food/walk", new[] { 854, 545, 615, 415, 350, 1255 } },
-        { "food/car", new[] { 830, 509, 615, 415, 350, 1255 } },
+        { "food/taxi", new[] { 854, 515, 550, 350, 350, 1255 } },
+        { "food/ehailing", new[] { 790, 421, 550, 350, 350, 1255 } },
+        { "food/walk", new[] { 990, 515, 550, 350, 350, 1255 } },
+        { "food/car", new[] { 830, 479, 550, 350, 350, 1255 } },
         { "transport/taxi", new[] { 854, 545, 615, 415, 350, 1245 } },
         { "transport/ehailing", new[] { 790, 451, 615, 415, 350, 1231 } },
-        { "transport/walk", new[] { 854, 545, 615, 415, 350, 1245 } },
+        { "transport/walk", new[] { 990, 545, 615, 415, 350, 1245 } },
         { "transport/car", new[] { 830, 509, 615, 415, 350, 1239 } },
         { "data_social/taxi", new[] { 854, 545, 615, 415, 350, 1255 } },
         { "data_social/ehailing", new[] { 790, 451, 615, 415, 350, 1255 } },
-        { "data_social/walk", new[] { 854, 545, 615, 415, 350, 1255 } },
+        { "data_social/walk", new[] { 990, 545, 615, 415, 350, 1255 } },
         { "data_social/car", new[] { 830, 509, 615, 415, 350, 1255 } },
         { "home_family/taxi", new[] { 704, 425, 205, 50, 200, 1225 } },
         { "home_family/ehailing", new[] { 640, 345, 205, 50, 200, 1211 } },
-        { "home_family/walk", new[] { 704, 425, 205, 50, 200, 1225 } },
+        { "home_family/walk", new[] { 840, 425, 205, 50, 200, 1225 } },
         { "home_family/car", new[] { 680, 395, 205, 50, 200, 1219 } },
     };
 
@@ -327,13 +330,13 @@ public static class EconomySimTests
              energy: "55,55,50,100,100,100,100", owed: 0f, promised: 200f),
             (style: "always_works", cash: 785f, savings: 470f, minCash: 200f, owing: "", shifts: 7,
              energy: "100,100,100,100,100,100,100", owed: 0f, promised: 200f),
-            (style: "middle", cash: 345f, savings: 200f, minCash: 97f, owing: "", shifts: 7,
+            (style: "middle", cash: 315f, savings: 200f, minCash: 97f, owing: "", shifts: 7,
              energy: "100,100,95,100,100,100,100", owed: 0f, promised: 399f),
             (style: "never_works", cash: 0f, savings: 350f, minCash: 0f, owing: "3,4,5,6,7", shifts: 0,
              energy: "-1,-1,-1,-1,-1,-1,-1", owed: 455f, promised: 749f),
-            (style: "comfort", cash: 614f, savings: 1f, minCash: 0f, owing: "3,4,5", shifts: 7,
+            (style: "comfort", cash: 549f, savings: 1f, minCash: 0f, owing: "3,4,5", shifts: 7,
              energy: "100,100,100,100,90,100,100", owed: 0f, promised: 749f),
-            (style: "comfort_loan", cash: 414f, savings: 1f, minCash: 0f, owing: "3,4", shifts: 7,
+            (style: "comfort_loan", cash: 349f, savings: 1f, minCash: 0f, owing: "3,4", shifts: 7,
              energy: "100,100,100,100,90,100,100", owed: 0f, promised: 749f),
         };
 

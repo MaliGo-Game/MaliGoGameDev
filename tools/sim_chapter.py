@@ -1,5 +1,5 @@
 """
-Chapter 1 economy simulation for MaliGo (docs/DESIGN_SPEC.md, Revision 3).
+Chapter 1 economy simulation for MaliGo (docs/DESIGN_SPEC.md, Revision 4).
 
 Plays the six reference play styles of spec section 3.2 through all 7 days for every
 combination of the two spending-profile taps (4 x 4 = 16 profiles) and reports, per
@@ -60,11 +60,13 @@ TRAVEL_MODES = ["taxi", "ehailing", "walk", "car"]
 # daily = taxi_fare_rise "pay the new fare": (cash a day, energy used today); paid today, then
 #         every night to Day 7. Bounded ranges (spec 3.4.0): trip R30-R50, daily R34-R50.
 # walk_first = "Mostly on foot" lists the walk option first.
+# keep_walking = "Mostly on foot": the fare rise's walk option is "Keep walking, no fares" (50 energy today,
+#         nothing later) instead of "walk today, taxi from tomorrow" (Revision 4, F2).
 TRAVEL = {
-    "taxi":     {"trip": (30, 5), "daily": (34, 5), "walk_first": False},
-    "ehailing": {"trip": (44, 0), "daily": (50, 0), "walk_first": False},
-    "walk":     {"trip": (30, 5), "daily": (34, 5), "walk_first": True},
-    "car":      {"trip": (36, 0), "daily": (40, 0), "walk_first": False},
+    "taxi":     {"trip": (30, 5), "daily": (34, 5), "walk_first": False, "keep_walking": False},
+    "ehailing": {"trip": (44, 0), "daily": (50, 0), "walk_first": False, "keep_walking": False},
+    "walk":     {"trip": (30, 5), "daily": (34, 5), "walk_first": True, "keep_walking": True},
+    "car":      {"trip": (36, 0), "daily": (40, 0), "walk_first": False, "keep_walking": False},
 }
 LIFT_CLUB = 120          # taxi_fare_rise lift club, the same for every mode
 
@@ -92,11 +94,22 @@ def scenarios(travel):
     ]
     if t["walk_first"]:
         trip_choices = [trip_choices[1], trip_choices[0], trip_choices[2]]
+    if t["keep_walking"]:
+        walk_today = C("walk_today", energy=50, stress=2, tag="Frugal")
+    else:
+        walk_today = C("walk_today", energy=50, stress=2, tag="Frugal",
+                       inst=inst(4, daily, interval=1, last=CHAPTER_LENGTH))
     return {
         "food_decision": {"spot": "CORNER", "need": True, "choices": [
             C("kota", cash=-50, stress=-5, tag="Discretionary"),
             C("vetkoek", cash=-20, stress=-2, tag="Frugal"),
-            C("skip_lunch", energy=45, stress=5, tag="Deferred"),
+            C("skip_lunch", energy=45, stress=5, tag="Frugal"),
+        ]},
+        # Revision 4 (F1): scheduled only for the food focus, Day 5
+        "kota_run": {"spot": "CORNER", "need": False, "choices": [
+            C("full_kota", cash=-65, stress=-4, tag="Discretionary"),
+            C("share_kota", cash=-30, energy=10, stress=-1, tag="Neutral"),
+            C("cook_home", energy=20, stress=2, tag="Frugal"),
         ]},
         "transport_decision": {"spot": "TAXI", "need": True, "choices": trip_choices},
         "data_runs_out": {"spot": "CORNER", "need": True, "choices": [
@@ -106,7 +119,7 @@ def scenarios(travel):
             C("free_wifi", energy=45, stress=3, tag="Frugal"),
         ]},
         "credit_bnpl": {"spot": "HUB", "need": False, "choices": [
-            C("pay_in_full", cash=-360, tag="Discretionary"),
+            C("pay_in_full", cash=-360, tag="Neutral"),
             C("pay_later", cash=-120, stress=3, tag="Deferred", inst=inst(2, 130, interval=2)),
             C("leave_it", tag="Frugal", want=True),
         ]},
@@ -118,9 +131,8 @@ def scenarios(travel):
         "taxi_fare_rise": {"spot": "TAXI", "need": True, "choices": [
             C("pay_new_fare", cash=-daily, energy=daily_energy, tag="Neutral",
               inst=inst(4, daily, interval=1, last=CHAPTER_LENGTH)),
-            C("lift_club", cash=-LIFT_CLUB, stress=-3, tag="Discretionary"),
-            C("walk_today", energy=50, stress=2, tag="Frugal",
-              inst=inst(4, daily, interval=1, last=CHAPTER_LENGTH)),
+            C("lift_club", cash=-LIFT_CLUB, stress=-3, tag="Neutral"),
+            walk_today,
         ]},
         "family_obligation": {"spot": "GATE", "need": True, "choices": [
             C("send_full", cash=-200, tag="Neutral"),
@@ -182,7 +194,7 @@ COMMON_TAIL = {
 }
 SCHEDULES = {
     "food":        {1: ["food_decision", "transport_decision"], 4: ["family_obligation", "group_chat_contribution"],
-                    5: ["emergency_expense", "mashonisa_offer"]},
+                    5: ["emergency_expense", "mashonisa_offer", "kota_run"]},
     "transport":   {1: ["transport_decision", "food_decision"], 4: ["family_obligation", "group_chat_contribution"],
                     5: ["emergency_expense", "mashonisa_offer"]},
     "data_social": {1: ["food_decision", "group_chat_contribution"], 4: ["family_obligation", "transport_decision"],
@@ -209,6 +221,7 @@ SAVER = {
     "group_chat_contribution": ["not_this_time"],
     "emergency_expense": ["from_savings"], "mashonisa_offer": ["not_today"],
     "stokvel_decision": ["join"], "windfall": ["all_to_savings"], "debit_order_check": ["cancel_gym"],
+    "kota_run": ["cook_home"],
 }
 MIDDLE = {
     "food_decision": ["vetkoek"], "transport_decision": ["usual"], "data_runs_out": ["day_bundle"],
@@ -216,7 +229,7 @@ MIDDLE = {
     "family_obligation": ["send_part"], "family_callback": ["send_rest", "from_savings"],
     "group_chat_contribution": ["gift_only"], "emergency_expense": ["from_savings", "from_cash"],
     "mashonisa_offer": ["not_today"], "stokvel_decision": ["join"], "windfall": ["half_half"],
-    "debit_order_check": ["leave_it"],
+    "debit_order_check": ["leave_it"], "kota_run": ["share_kota"],
 }
 COMFORT = {
     "food_decision": ["kota"], "transport_decision": ["ride"], "data_runs_out": ["bundle_1gb"],
@@ -224,7 +237,7 @@ COMFORT = {
     "family_obligation": ["send_full"], "family_callback": ["send_rest"],
     "group_chat_contribution": ["in_for_dinner"], "emergency_expense": ["from_cash"],
     "mashonisa_offer": ["not_today"], "stokvel_decision": ["join"], "windfall": ["keep_cash"],
-    "debit_order_check": ["move_to_cash"],
+    "debit_order_check": ["move_to_cash"], "kota_run": ["full_kota"],
 }
 COMFORT_LOAN = dict(COMFORT, mashonisa_offer=["borrow_400"])
 # Not a reference style (not in the WP9 table): puts off everything it can while keeping every
@@ -236,7 +249,7 @@ DEFERRER = {
     "family_callback": ["not_this_week"], "family_callback_full": ["not_this_week"],
     "group_chat_contribution": ["not_this_time"], "emergency_expense": ["cold_showers"],
     "mashonisa_offer": ["borrow_400"], "stokvel_decision": ["not_for_now"], "windfall": ["all_to_savings"],
-    "debit_order_check": ["leave_it"],
+    "debit_order_check": ["leave_it"], "kota_run": ["cook_home"],
 }
 
 STYLES = [
@@ -559,7 +572,7 @@ def main():
 
     # ---- report
     names = [s[0] for s in STYLES]
-    print("MaliGo Chapter 1 simulation (spec Revision 3)")
+    print("MaliGo Chapter 1 simulation (spec Revision 4)")
     print("End total = cash + savings on the night of Day 7 (start R1 000).")
     print()
     print("Reference end totals (WP9 EconomySimTests):")

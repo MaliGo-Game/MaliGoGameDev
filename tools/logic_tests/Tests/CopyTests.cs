@@ -34,6 +34,7 @@ public static class CopyTests
         { "group_chat_contribution", new[] { "gift_only" } }, { "emergency_expense", new[] { "from_savings", "from_cash" } },
         { "mashonisa_offer", new[] { "not_today" } }, { "stokvel_decision", new[] { "join" } },
         { "windfall", new[] { "half_half" } }, { "debit_order_check", new[] { "leave_it" } },
+        { "kota_run", new[] { "share_kota" } },
     };
 
     static PlayerData Fresh(string focus = "food", string travel = "taxi", string name = "Thandeka")
@@ -231,6 +232,7 @@ public static class CopyTests
         GameEvents.ClearPendingMoneyChanged();
         NightResult n = DayCycle.EndDay(d);
         Contains(RevealLineBuilder.Build(d, n), "The R400 from Bra K was the biggest change today. R600 goes back on Day 7.", "A4");
+        Assert.Equal("+R400 today · R400 borrowed", RevealLineBuilder.DeltaPill(n.record), "a loan day says so in the pill");
         List<RevealRow> rows = RevealLineBuilder.LedgerRows(d, n.record);
         Assert.True(rows.Count == 1 && rows[0].isLoan && rows[0].label.EndsWith(" · R600 back Day 7"), "loan row: " + rows[0].label);
         Assert.Equal("+R400", rows[0].amountText, "loan amount");
@@ -284,7 +286,7 @@ public static class CopyTests
         GameEvents.ClearPendingMoneyChanged();
         NightResult n = DayCycle.EndDay(d); // night 3: rent 500 with R40 cash
         string line = RevealLineBuilder.Build(d, n);
-        Contains(line, "R460 is still owed for Rent. It comes off first when there's cash, in your pocket or moved from savings at the Bank.", "B2");
+        Contains(line, "R460 is still owed for Rent. It comes off tomorrow night from your cash, and the Bank can move savings into cash before then.", "B2");
         Assert.True(n.record.owedAtClose > 459f, "owedAtClose");
         Assert.Equal("Still owed: R460 (R0 this morning)", RevealLineBuilder.StillOwedLine(d, n.record), "still owed line");
         Assert.Equal("−R540 today", RevealLineBuilder.DeltaPill(n.record), "a short night is still shown as money out");
@@ -471,15 +473,15 @@ public static class CopyTests
         PlayWeek(d, Middle);
         ChapterSummary s = ChapterReflection.Summary(d);
         Assert.Equal(1000f, s.startTotal, "start");
-        Assert.Equal(545f, s.endTotal, "end");
-        Assert.Equal(345f, s.endCash, "cash");
+        Assert.Equal(515f, s.endTotal, "end");
+        Assert.Equal(315f, s.endCash, "cash");
         Assert.Equal(200f, s.endSavings, "savings");
-        Assert.Equal("−R455 this week", ChapterReflection.WeekPill(s), "week pill");
+        Assert.Equal("−R485 this week", ChapterReflection.WeekPill(s), "week pill");
         Assert.True(ChapterReflection.StillOwedLine(s) == null, "nothing owed: omitted");
         Assert.Equal("Already promised for payday: R399", ChapterReflection.PromisedLine(s), "promised");
         Assert.Equal("Stokvel R200 · Gym R199", ChapterReflection.PromisedList(s), "promised list");
         Assert.True(s.top.Length == 3, "three moments");
-        Assert.Equal("Geyser repair, from savings", s.top[0].label, "top 1");
+        Assert.Equal("Geyser repair from savings", s.top[0].label, "top 1");
         Assert.True(s.topDays[0] == 5, "top 1 day");
         Assert.Equal(300f, s.top[1].TotalDelta, "top 2 neighbour +300");
         Assert.True(s.topDays[1] == 6, "top 2 day");
@@ -545,11 +547,30 @@ public static class CopyTests
             float expected = d.chapter.days.SelectMany(x => x.events)
                 .Where(e => e.kind == MoneyEventKind.Out && cats.Contains(e.category)).Sum(e => -e.TotalDelta);
             string line = Noticed(d)[0];
-            Assert.Equal("You said most of your money goes on " + SpendingFocus.Get(focus).maliPhrase + ". This week that came to R"
-                         + MoneyFormat.Digits(expected) + ".", line, "N0 " + focus);
+            if (expected >= ChapterReflection.N0Minimum)
+            {
+                Assert.Equal("You said most of your money goes on " + SpendingFocus.Get(focus).maliPhrase + ". This week that came to R"
+                             + MoneyFormat.Digits(expected) + ".", line, "N0 " + focus);
+            }
+            else
+            {
+                // Revision 4: under R100 N0 is skipped, so a small week never reads as contradicting the player.
+                Assert.True(!Noticed(d).Any(l => l.StartsWith("You said")), "no N0 under R100 for " + focus + " (R" + expected + ")");
+            }
+
             if (focus == "transport")
             {
                 Assert.Equal(200f, expected, "transport middle path R200");
+            }
+
+            if (focus == "food")
+            {
+                Assert.Equal(50f, expected, "food middle path: vetkoek R20 + half a kota R30");
+                PlayerData comfort = Fresh(focus);
+                comfort.spendingProfile.source = SpendingProfileSource.Onboarding;
+                PlayWeek(comfort, Comfort);
+                Assert.Equal("You said most of your money goes on food and takeaways. This week that came to R115.",
+                             Noticed(comfort)[0], "N0 food comfort: kota R50 + kota run R65");
             }
 
             PlayerData def = Fresh(focus);
@@ -591,6 +612,16 @@ public static class CopyTests
         NightWith(n6, Ev("Moved to savings", MoneyCategory.SavingsMove, -100f, 100f, "bank:to_savings"),
                   Ev("Neighbour, split", MoneyCategory.ExtraMoney, 150f, 150f, "scenario:windfall/half_half"));
         Assert.Equal("R250 went into savings over the week.", Noticed(n6)[0], "N6");
+
+        // N6 is the net movement: money taken out of savings counts against money put in.
+        PlayerData net = Fresh();
+        NightWith(net, Ev("Moved to savings", MoneyCategory.SavingsMove, -200f, 200f, "bank:to_savings"),
+                  Ev("Taken out of savings", MoneyCategory.SavingsMove, 150f, -150f, "bank:from_savings"));
+        Assert.True(!Noticed(net).Any(l => l.Contains("went into savings")), "N6 net R50: under R100, no line");
+        PlayerData net2 = Fresh();
+        NightWith(net2, Ev("Neighbour's money to savings", MoneyCategory.ExtraMoney, 0f, 300f, "scenario:windfall/all_to_savings"),
+                  Ev("Taken out of savings", MoneyCategory.SavingsMove, 100f, -100f, "bank:from_savings"));
+        Assert.Equal("R200 went into savings over the week.", Noticed(net2)[0], "N6 net");
     }
 
     public static void TestNoticedN7FromOwedAtCloseOnly()
@@ -633,8 +664,9 @@ public static class CopyTests
         d.spendingProfile.source = SpendingProfileSource.Onboarding;
         AddChoice(d, "emergency_expense", "from_savings", "Neutral");
         for (int i = 0; i < 5; i++) AddChoice(d, "s" + i, "x", "Deferred");
-        NightWith(d, Ev("Vetkoek and mince", MoneyCategory.Food, -20f, 0f, "scenario:food_decision/vetkoek"),
-                  Ev("R80 to family", MoneyCategory.Family, -80f, 0f, "scenario:family_obligation/send_part"));
+        NightWith(d, Ev("Kota and a cold drink", MoneyCategory.Food, -50f, 0f, "scenario:food_decision/kota"),
+                  Ev("Kota run with friends", MoneyCategory.Food, -65f, 0f, "scenario:kota_run/full_kota"),
+                  Ev("Towards Gogo's meds", MoneyCategory.Family, -80f, 0f, "scenario:family_obligation/send_part"));
         string[] lines = Noticed(d);
         Assert.True(lines.Length == 3, "three");
         Assert.True(lines[0].StartsWith("You said") && lines[1].StartsWith("When the geyser") && lines[2].StartsWith("You made room"),
@@ -674,7 +706,7 @@ public static class CopyTests
         { "family_obligation", new[] { "send_full" } }, { "family_callback", new[] { "send_rest" } },
         { "group_chat_contribution", new[] { "in_for_dinner" } }, { "emergency_expense", new[] { "from_cash" } },
         { "mashonisa_offer", new[] { "borrow_400" } }, { "stokvel_decision", new[] { "join" } }, { "windfall", new[] { "keep_cash" } },
-        { "debit_order_check", new[] { "move_to_cash" } },
+        { "debit_order_check", new[] { "move_to_cash" } }, { "kota_run", new[] { "full_kota" } },
     };
 
     static readonly Dictionary<string, string[]> Deferrer = new Dictionary<string, string[]>
@@ -686,6 +718,7 @@ public static class CopyTests
         { "group_chat_contribution", new[] { "not_this_time" } }, { "emergency_expense", new[] { "cold_showers" } },
         { "mashonisa_offer", new[] { "borrow_400" } }, { "stokvel_decision", new[] { "not_for_now" } },
         { "windfall", new[] { "all_to_savings" } }, { "debit_order_check", new[] { "leave_it" } },
+        { "kota_run", new[] { "cook_home" } },
     };
 
     public static void TestBannedWordsAbsent()
@@ -888,6 +921,9 @@ public static class CopyTests
         AssertOneLine("+9 more new promises", "Bold", 36, column, "more promises");
         AssertOneLine("Cash R9 999 · Savings R9 999", "SemiBold", 32, column, "split");
         AssertOneLine("You started Day 7 with", "SemiBold", 40, column, "started");
+        // The delta pill (HudValue, Black 44) sizes to its text + 60 u inside the column (Revision 4: loan days;
+        // Bra K lends R400 at most).
+        AssertOneLine("−R9 999 today · R400 borrowed", "Black", 44, column - 60f, "delta pill with a loan");
 
         // Real promise lines from every profile's comfort and deferring paths.
         foreach (string focus in Foci)

@@ -16,9 +16,9 @@ namespace MaliGo.Dialogue
     {
         public const string StretchedPrefix = "You seem stretched, {name}. ";
         public const string NothingWaiting = "That's everything for today, {name}. Sleep at home when you're ready.";
-        public const string OneWaiting = "One thing is waiting today: {places}.";
-        public const string TwoWaiting = "Two things are waiting today: {places}.";
-        public const string ManyWaiting = "{count} things are waiting today: {places}.";
+        public const string OneWaiting = "One thing is waiting today, {places}.";
+        public const string TwoWaiting = "Two things are waiting today, {places}.";
+        public const string ManyWaiting = "{count} things are waiting today, {places}.";
         public const string OwedSuffix = " R{owed} is still owed for {label}.";
         public const string NotYetSuffix = " The shift opens after {gate}.";
         public const string ShiftSuffix = " There's a shift going at the far end of the main road.";
@@ -62,7 +62,7 @@ namespace MaliGo.Dialogue
             var places = new List<string>();
             foreach (string spot in spots)
             {
-                places.Add(ChapterSchedule.SpotPlaceName(spot, focus, travel));
+                places.Add(ChapterSchedule.SpotWhere(spot, focus, travel));
             }
 
             string waiting;

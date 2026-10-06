@@ -43,6 +43,9 @@ namespace MaliGo.Copy
         public const string EmptyLedger = "Nothing moved today.";
         public const string OnToPayday = "On to payday";
 
+        /// <summary>B2's second sentence: arrears are charged at night, from cash only (ObligationLedger.SettleDue).</summary>
+        public const string ArrearsNext = "It comes off tomorrow night from your cash, and the Bank can move savings into cash before then.";
+
         const float Tol = 0.005f;
 
         // ================================================================ Mali's line (§4.3)
@@ -161,7 +164,7 @@ namespace MaliGo.Copy
             if (owed != null)
             {
                 return "R" + MoneyFormat.Digits(owed.arrears) + " is still owed for " + Label(owed.label, owed.shortLabel)
-                       + ". It comes off first when there's cash, in your pocket or moved from savings at the Bank.";
+                       + ". " + ArrearsNext;
             }
 
             List<DueItem> tomorrow = ObligationLedger.DueOnNight(data, endedDay + 1);
@@ -401,11 +404,28 @@ namespace MaliGo.Copy
         public const string LedgerTitle = "What moved it";
         public const string ComingUpTitle = "Coming up";
 
-        /// <summary>"+R210 today" / "−R85 today" / "R0 today". A neutral figure: borrowing shows here as money in,
-        /// and the still-owed and new-promise lines beside it carry what it costs.</summary>
+        /// <summary>"+R210 today" / "−R85 today" / "R0 today". A neutral figure. On a day with a loan the pill says so
+        /// ("+R166 today · R400 borrowed"), so borrowed money never reads as a good day (Revision 4).</summary>
         public static string DeltaPill(DayRecord record)
         {
-            return MoneyFormat.Signed(record != null ? record.EndTotal - record.StartTotal : 0f) + " today";
+            string pill = MoneyFormat.Signed(record != null ? record.EndTotal - record.StartTotal : 0f) + " today";
+            float borrowed = Borrowed(record);
+            return borrowed > Tol ? pill + " · " + MoneyFormat.Rand(borrowed) + " borrowed" : pill;
+        }
+
+        /// <summary>Money received from loans on the day (In events in the Loan category).</summary>
+        public static float Borrowed(DayRecord record)
+        {
+            float total = 0f;
+            foreach (MoneyEvent e in record?.events ?? Array.Empty<MoneyEvent>())
+            {
+                if (e != null && e.kind == MoneyEventKind.In && e.category == MoneyCategory.Loan)
+                {
+                    total += e.TotalDelta;
+                }
+            }
+
+            return total;
         }
 
         /// <summary>"Cash R{cash} · Savings R{savings}" at the day's close.</summary>

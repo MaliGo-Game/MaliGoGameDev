@@ -55,6 +55,9 @@ namespace MaliGo.Copy
         public const string CloseCaption = "Chapter 2 starts on payday. It's coming in a future update.";
         public const string LiveAgain = "Live the week again";
 
+        /// <summary>N0 needs at least this much spent in the focus's categories (Revision 4).</summary>
+        public const float N0Minimum = 100f;
+
         const float Tol = 0.005f;
 
         // ================================================================ summary
@@ -217,12 +220,12 @@ namespace MaliGo.Copy
                 }
             }
 
-            // N0
+            // N0: only from R100 (Revision 4), so a small week never reads as contradicting what the player said.
             SpendingProfile profile = data.spendingProfile;
             if (profile != null && profile.source == SpendingProfileSource.Onboarding)
             {
                 float amt = Outflow(chapter, SpendingFocus.Categories(profile.focus));
-                if (amt >= 1f - Tol)
+                if (amt >= N0Minimum - Tol)
                 {
                     Add("You said most of your money goes on " + SpendingFocus.Get(profile.focus).maliPhrase
                         + ". This week that came to R" + MoneyFormat.Digits(amt) + ".");
@@ -269,14 +272,11 @@ namespace MaliGo.Copy
                 Add(CountWord(discretionary) + " you chose the option that made the day easier.");
             }
 
-            // N6
+            // N6: the net movement of savings over the week (money taken out counts against money put in).
             float saved = 0f;
             foreach (MoneyEvent e in AllEvents(chapter))
             {
-                if (e.savingsDelta > Tol)
-                {
-                    saved += e.savingsDelta;
-                }
+                saved += e.savingsDelta;
             }
 
             if (saved >= 100f - Tol)

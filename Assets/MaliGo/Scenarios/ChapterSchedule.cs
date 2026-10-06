@@ -41,13 +41,16 @@ namespace MaliGo.Scenarios
         public const string FollowUpTeaserText = "Tomorrow: your aunt calls back.";
         public const string PaydayTeaserText = "Tomorrow is payday.";
 
+        // Day 5 of the other foci (the food focus adds its kota run to it, Revision 4).
+        static readonly string[] GeyserAndBraK = { ScenarioLibrary.EmergencyExpenseId, ScenarioLibrary.MashonisaOfferId };
+
         static readonly string[][] FoodSchedule =
         {
             new[] { ScenarioLibrary.FoodDecisionId, ScenarioLibrary.TransportDecisionId },
             new[] { ScenarioLibrary.DataRunsOutId, ScenarioLibrary.CreditBnplId },
             new[] { ScenarioLibrary.TaxiFareRiseId, ScenarioLibrary.ImpulsePurchaseId },
             new[] { ScenarioLibrary.FamilyObligationId, ScenarioLibrary.GroupChatContributionId },
-            new[] { ScenarioLibrary.EmergencyExpenseId, ScenarioLibrary.MashonisaOfferId },
+            new[] { ScenarioLibrary.EmergencyExpenseId, ScenarioLibrary.MashonisaOfferId, ScenarioLibrary.KotaRunId },
             new[] { ScenarioLibrary.StokvelDecisionId, ScenarioLibrary.WindfallId },
             new[] { ScenarioLibrary.DebitOrderCheckId },
         };
@@ -55,7 +58,7 @@ namespace MaliGo.Scenarios
         static readonly string[][] TransportSchedule =
         {
             new[] { ScenarioLibrary.TransportDecisionId, ScenarioLibrary.FoodDecisionId },
-            FoodSchedule[1], FoodSchedule[2], FoodSchedule[3], FoodSchedule[4], FoodSchedule[5], FoodSchedule[6],
+            FoodSchedule[1], FoodSchedule[2], FoodSchedule[3], GeyserAndBraK, FoodSchedule[5], FoodSchedule[6],
         };
 
         static readonly string[][] DataSocialSchedule =
@@ -63,7 +66,7 @@ namespace MaliGo.Scenarios
             new[] { ScenarioLibrary.FoodDecisionId, ScenarioLibrary.GroupChatContributionId },
             FoodSchedule[1], FoodSchedule[2],
             new[] { ScenarioLibrary.FamilyObligationId, ScenarioLibrary.TransportDecisionId },
-            FoodSchedule[4], FoodSchedule[5], FoodSchedule[6],
+            GeyserAndBraK, FoodSchedule[5], FoodSchedule[6],
         };
 
         static readonly string[][] HomeFamilySchedule =
@@ -90,6 +93,7 @@ namespace MaliGo.Scenarios
             { Key(ScenarioLibrary.FamilyObligationId, ScenarioLibrary.TransportDecisionId), "Day 4. Your phone's going to ring today, and there's a trip across town." },
             { Key(ScenarioLibrary.EmergencyExpenseId, ScenarioLibrary.GroupChatContributionId), "Day 4. Something's not right at home, and the group chat is busy." },
             { Key(ScenarioLibrary.EmergencyExpenseId, ScenarioLibrary.MashonisaOfferId), "Day 5. Something's not right at home this morning." },
+            { Key(ScenarioLibrary.EmergencyExpenseId, ScenarioLibrary.MashonisaOfferId, ScenarioLibrary.KotaRunId), "Day 5. Something's not right at home, and your friends want a kota run." },
             { Key(ScenarioLibrary.TransportDecisionId, ScenarioLibrary.MashonisaOfferId), "Day 5. There's a trip across town, and Bra K wants a word." },
             { Key(ScenarioLibrary.StokvelDecisionId, ScenarioLibrary.WindfallId), "Day 6. The stokvel meets at the shops today, and your neighbour's looking for you." },
             { Key(ScenarioLibrary.DebitOrderCheckId), "Day 7. Last day before payday." },
@@ -103,6 +107,7 @@ namespace MaliGo.Scenarios
             { Key(ScenarioLibrary.FamilyObligationId, ScenarioLibrary.TransportDecisionId), "Tomorrow: a call from home, and a trip across town." },
             { Key(ScenarioLibrary.EmergencyExpenseId, ScenarioLibrary.GroupChatContributionId), "Tomorrow: something at home, and the group chat." },
             { Key(ScenarioLibrary.EmergencyExpenseId, ScenarioLibrary.MashonisaOfferId), "Tomorrow: something at home needs fixing." },
+            { Key(ScenarioLibrary.EmergencyExpenseId, ScenarioLibrary.MashonisaOfferId, ScenarioLibrary.KotaRunId), "Tomorrow: something at home, and a kota run." },
             { Key(ScenarioLibrary.TransportDecisionId, ScenarioLibrary.MashonisaOfferId), "Tomorrow: a trip across town, and Bra K wants a word." },
             { Key(ScenarioLibrary.StokvelDecisionId, ScenarioLibrary.WindfallId), "Tomorrow: the stokvel, and your neighbour." },
             { Key(ScenarioLibrary.DebitOrderCheckId), "Tomorrow: the last day before payday." },
@@ -388,6 +393,7 @@ namespace MaliGo.Scenarios
                 case ScenarioLibrary.FoodDecisionId:
                 case ScenarioLibrary.DataRunsOutId:
                 case ScenarioLibrary.GroupChatContributionId:
+                case ScenarioLibrary.KotaRunId:
                     return SpotCorner;
                 case ScenarioLibrary.TransportDecisionId:
                 case ScenarioLibrary.TaxiFareRiseId:
@@ -416,6 +422,21 @@ namespace MaliGo.Scenarios
         {
             Place(spotId, focus, travel, out string name, out _);
             return name;
+        }
+
+        /// <summary>
+        /// Where a spot is, as Mali says it in her greeting (Revision 4): "at the kota shop", "at home", "down the road".
+        /// "" for an unknown spot.
+        /// </summary>
+        public static string SpotWhere(string spotId, string focus, string travel)
+        {
+            string name = SpotPlaceName(spotId, focus, travel);
+            if (string.IsNullOrEmpty(name))
+            {
+                return "";
+            }
+
+            return spotId == SpotEast ? name : "at " + name;
         }
 
         /// <summary>Place label for the choice-sheet eyebrow and the CC summary, e.g. "Kota shop". "" for an unknown spot.</summary>
@@ -465,7 +486,7 @@ namespace MaliGo.Scenarios
                     label = "Shops by the bank";
                     return;
                 case SpotGate:
-                    name = "your gate";
+                    name = "home";
                     label = "Home";
                     return;
                 case SpotEast:
@@ -496,7 +517,11 @@ namespace MaliGo.Scenarios
             }
         }
 
-        /// <summary>Labels of the first three distinct spots in this focus's schedule order (CC screen 3).</summary>
+        /// <summary>
+        /// Labels of the first three distinct spots in this focus's schedule order (CC screen 3). The travel spot
+        /// (its label follows the travel tap) is always one of the three (Revision 4): when it is not among the
+        /// first three, it takes the third place.
+        /// </summary>
         public static string[] WeekPlaces(string focus, string travel)
         {
             var spots = new List<string>();
@@ -519,6 +544,18 @@ namespace MaliGo.Scenarios
                 if (spots.Count == 3)
                 {
                     break;
+                }
+            }
+
+            if (!spots.Contains(SpotTaxi))
+            {
+                if (spots.Count == 3)
+                {
+                    spots[2] = SpotTaxi;
+                }
+                else
+                {
+                    spots.Add(SpotTaxi);
                 }
             }
 

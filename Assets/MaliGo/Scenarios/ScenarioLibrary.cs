@@ -29,15 +29,17 @@ namespace MaliGo.Scenarios
         public const string StokvelDecisionId = "stokvel_decision";
         public const string WindfallId = "windfall";
         public const string DebitOrderCheckId = "debit_order_check";
+        public const string KotaRunId = "kota_run";
 
         static readonly string[] allIds =
         {
             FoodDecisionId, TransportDecisionId, DataRunsOutId, CreditBnplId, ImpulsePurchaseId, TaxiFareRiseId,
             FamilyObligationId, FamilyCallbackId, FamilyCallbackFullId, GroupChatContributionId, EmergencyExpenseId,
-            MashonisaOfferId, StokvelDecisionId, WindfallId, DebitOrderCheckId,
+            MashonisaOfferId, StokvelDecisionId, WindfallId, DebitOrderCheckId, KotaRunId,
         };
 
-        /// <summary>All 15 scenario ids: the 13 scheduled ones and the 2 follow-ups.</summary>
+        /// <summary>All 16 scenario ids: the 13 scheduled for every focus, kota_run (scheduled only for the
+        /// food focus, Revision 4) and the 2 follow-ups.</summary>
         public static IReadOnlyList<string> AllIds => Array.AsReadOnly(allIds);
 
         // Money categories (design spec 2.2), written out so this file needs no other package's types.
@@ -105,6 +107,9 @@ namespace MaliGo.Scenarios
             public string fareTitle, fareSituation, fareIntro, walkTodayLabel;
             public string tripSituation;
             public bool walkFirst;
+
+            /// <summary>"Mostly on foot" (Revision 4, F2): the fare rise offers to keep walking, with no fares later.</summary>
+            public bool keepWalking;
         }
 
         const string TripSituationTaxi =
@@ -124,7 +129,7 @@ namespace MaliGo.Scenarios
                         tripLedger = "Shared ride there and back",
                         tripReaction = "R44 for the shared rides, {name}, there and back.",
                         daily = 50, dailyEnergy = 0f, dailyLabel = "Pay the new price (R50 a day)",
-                        dailyLedger = "Shared ride, new price", dailyObligation = "Shared rides", dailyShort = "Rides",
+                        dailyLedger = "Shared ride at the new price", dailyObligation = "Shared rides", dailyShort = "Rides",
                         dailyReaction = "R50 today, {name}. The new price comes off again on {laterDays}.",
                         fareTitle = "Ride prices went up",
                         fareSituation = "Ride prices went up with petrol: a shared ride to town is R25 each way from today. You're going to town and back every day till payday for a short course.",
@@ -162,6 +167,7 @@ namespace MaliGo.Scenarios
                         walkTodayLabel = "Walk today, taxi from tomorrow",
                         tripSituation = TripSituationTaxi,
                         walkFirst = travel == ChapterSchedule.TravelWalk,
+                        keepWalking = travel == ChapterSchedule.TravelWalk,
                     };
             }
         }
@@ -177,7 +183,7 @@ namespace MaliGo.Scenarios
                          FoodDecision(), TransportDecision(t), DataRunsOut(), CreditBnpl(), ImpulsePurchase(),
                          TaxiFareRise(t), FamilyObligation(), FamilyCallback(), FamilyCallbackFull(),
                          GroupChatContribution(), EmergencyExpense(), MashonisaOffer(), StokvelDecision(), Windfall(),
-                         DebitOrderCheck(),
+                         DebitOrderCheck(), KotaRun(),
                      })
             {
                 FillPlaceholders(s, focus, travel, t);
@@ -306,8 +312,8 @@ namespace MaliGo.Scenarios
                 Choice("kota", "Kota and a cold drink (R50)", "Kota and a cold drink", -50f, 0f, 0f, -5f, Discretionary,
                     "R50 for lunch. You're full till supper."),
                 Choice("vetkoek", "Vetkoek and mince (R20)", "Vetkoek and mince", -20f, 0f, 0f, -2f, Frugal,
-                    "R20 for lunch, {name}, and you're sorted."),
-                Choice("skip_lunch", "Skip lunch", "", 0f, 0f, -45f, 5f, Deferred,
+                    "R20 for lunch. That keeps you going till supper."),
+                Choice("skip_lunch", "Skip lunch", "", 0f, 0f, -45f, 5f, Frugal,
                     "No money out. Skipping lunch took 45 energy, and a shift needs 60."));
         }
 
@@ -339,7 +345,7 @@ namespace MaliGo.Scenarios
                             "R15 covers today, {name}. Day bundles carry on: R15 on {laterDays}."),
                         2, 15f, 1, 0, LastChapterDay, "Day bundles", "Data", CatPhoneData, KindRepeat),
                     "R15 covers today, {name}, and that's the last day before payday."),
-                Choice("free_wifi", "Use the free Wi-Fi at the mall", "", 0f, 0f, -45f, 3f, Frugal,
+                Choice("free_wifi", "Use the free internet at the mall", "", 0f, 0f, -45f, 3f, Frugal,
                     "No money out. The walk to the mall and the wait took 45 energy."));
         }
 
@@ -347,9 +353,9 @@ namespace MaliGo.Scenarios
         {
             return Scenario(CreditBnplId, ChapterSchedule.SpotHub, "shoppingBasket", CatShopping, "the speaker",
                 "Pay now or pay later?", "Phone shop", "A deal at the phone shop",
-                "The phone shop has a Bluetooth speaker you've wanted for ages: R360. Pay it all now, or take it home today for R120 and pay R130 twice over the next few days.",
+                "The phone shop has a wireless speaker you've wanted for ages: R360. Pay it all now, or take it home today for R120 and pay R130 twice over the next few days.",
                 "Same speaker, {name}. Two ways to pay for it.",
-                Choice("pay_in_full", "Pay R360 now", "Speaker, paid in full", -360f, 0f, 0f, 0f, Discretionary,
+                Choice("pay_in_full", "Pay R360 now", "Full price for the speaker", -360f, 0f, 0f, 0f, Neutral,
                     "R360 today, and the speaker's paid off."),
                 WithPayments(
                     Choice("pay_later", "Pay later: R120 now, then R130 twice", "Speaker deposit", -120f, 0f, 0f, 3f,
@@ -377,6 +383,17 @@ namespace MaliGo.Scenarios
 
         static ScenarioDefinition TaxiFareRise(Travel t)
         {
+            // "Mostly on foot" (Revision 4, F2): the free option is to keep walking every day, with no fares booked.
+            // Its cost is the 50 energy on the card: as Day 3's first scenario it costs that day's shift.
+            ScenarioChoice walk = t.keepWalking
+                ? Choice("walk_today", "Keep walking, no fares", "", 0f, 0f, -50f, 2f, Frugal,
+                    "No fares to pay. Walking to town and back took 50 energy today.")
+                : WithNoLater(WithPayments(
+                        Choice("walk_today", t.walkTodayLabel, "", 0f, 0f, -50f, 2f, Frugal,
+                            "Nothing spent today. That walk took 50 energy, and it's R[daily] a day again from tomorrow."),
+                        4, t.daily, 1, 0, LastChapterDay, t.dailyObligation, t.dailyShort, CatTransport, KindRepeat),
+                    "Nothing spent today. That walk took 50 energy.");
+
             return Scenario(TaxiFareRiseId, ChapterSchedule.SpotTaxi, "car", CatTransport, "the trip to town",
                 t.fareTitle, "[Place]", "News at [place]", t.fareSituation, t.fareIntro,
                 WithNoLater(WithPayments(
@@ -385,12 +402,8 @@ namespace MaliGo.Scenarios
                         4, t.daily, 1, 0, LastChapterDay, t.dailyObligation, t.dailyShort, CatTransport, KindRepeat),
                     "R[daily] today, {name}. That's the last trip before payday."),
                 Choice("lift_club", "Join a lift club (R120 till payday)", "Lift club till payday", -120f, 0f, 0f, -3f,
-                    Discretionary, "R120 for the lift club. Your trips to the course are covered till payday."),
-                WithNoLater(WithPayments(
-                        Choice("walk_today", t.walkTodayLabel, "", 0f, 0f, -50f, 2f, Frugal,
-                            "Nothing spent today. That walk took 50 energy, and it's R[daily] a day again from tomorrow."),
-                        4, t.daily, 1, 0, LastChapterDay, t.dailyObligation, t.dailyShort, CatTransport, KindRepeat),
-                    "Nothing spent today. That walk took 50 energy."));
+                    Neutral, "R120 for the lift club. Your trips to the course are covered till payday."),
+                walk);
         }
 
         static ScenarioDefinition FamilyObligation()
@@ -398,15 +411,15 @@ namespace MaliGo.Scenarios
             return Scenario(FamilyObligationId, ChapterSchedule.SpotGate, "token_give", CatFamily, "the call from home",
                 "A call from home", "At home", "Your phone's ringing",
                 "Your aunt calls. Gogo's chronic medication has run out and the clinic is out of stock. The pharmacy wants R200 to tide her over.",
-                "It's your aunt, {name}. It's about gogo.",
-                Choice("send_full", "Send R200", "R200 for gogo's meds", -200f, 0f, 0f, 0f, Neutral,
-                    "R200 is on its way to gogo. That's R200 of your week."),
+                "It's your aunt, {name}. It's about Gogo.",
+                Choice("send_full", "Send R200", "Gogo's meds", -200f, 0f, 0f, 0f, Neutral,
+                    "R200 is on its way to Gogo. That's R200 of your week."),
                 WithFollowUp(
-                    Choice("send_part", "Send R80 for now", "R80 towards gogo's meds", -80f, 0f, 0f, 3f, Neutral,
-                        "R80 is on its way to gogo, {name}. Your aunt will call back about the rest."),
+                    Choice("send_part", "Send R80 for now", "Towards Gogo's meds", -80f, 0f, 0f, 3f, Neutral,
+                        "R80 is on its way to Gogo, {name}. Your aunt will call back about the rest."),
                     FamilyCallbackId, 2, "Call back"),
-                Choice("from_savings", "Send R200 from savings", "Gogo's meds, from savings", 0f, -200f, 0f, 0f, Neutral,
-                    "R200 from savings, and gogo has her meds. Savings is at R{savings} now."),
+                Choice("from_savings", "Send R200 from savings", "Gogo's meds from savings", 0f, -200f, 0f, 0f, Neutral,
+                    "R200 from savings, and Gogo has her meds. Savings is at R{savings} now."),
                 WithFollowUp(
                     Choice("cant_this_week", "Explain you can't this week", "", 0f, 0f, 0f, 8f, Neutral,
                         "That's a hard call to make. Your aunt says she'll try you again in two days."),
@@ -423,10 +436,10 @@ namespace MaliGo.Scenarios
                 CallbackTitle, "At home", CallbackPrompt,
                 "Your aunt again. Gogo's meds are running low, and the clinic still has none. R120 would see her through to month-end.",
                 CallbackIntro,
-                Choice("send_rest", "Send R120", "R120 for gogo's meds", -120f, 0f, 0f, 0f, Neutral,
-                    "R120 is on its way, and gogo's covered till month-end."),
-                Choice("from_savings", "Send R120 from savings", "Gogo's meds, from savings", 0f, -120f, 0f, 0f, Neutral,
-                    "R120 from savings, and gogo's covered. Savings is at R{savings} now."),
+                Choice("send_rest", "Send R120", "Rest of Gogo's meds", -120f, 0f, 0f, 0f, Neutral,
+                    "R120 is on its way, and Gogo's covered till month-end."),
+                Choice("from_savings", "Send R120 from savings", "Gogo's meds from savings", 0f, -120f, 0f, 0f, Neutral,
+                    "R120 from savings, and Gogo's covered. Savings is at R{savings} now."),
                 Choice("not_this_week", "Not this week either", "", 0f, 0f, 0f, 6f, Neutral,
                     "That's a hard one to say twice. Your week stays as it was."));
             s.isFollowUp = true;
@@ -439,10 +452,10 @@ namespace MaliGo.Scenarios
                 CallbackTitle, "At home", CallbackPrompt,
                 "Your aunt again. Gogo's meds are running low, and the clinic still has none. R200 would see her through to month-end.",
                 CallbackIntro,
-                Choice("send_full", "Send R200", "R200 for gogo's meds", -200f, 0f, 0f, 0f, Neutral,
-                    "R200 is on its way, and gogo's covered till month-end."),
-                Choice("from_savings", "Send R200 from savings", "Gogo's meds, from savings", 0f, -200f, 0f, 0f, Neutral,
-                    "R200 from savings, and gogo's covered. Savings is at R{savings} now."),
+                Choice("send_full", "Send R200", "Gogo's meds", -200f, 0f, 0f, 0f, Neutral,
+                    "R200 is on its way, and Gogo's covered till month-end."),
+                Choice("from_savings", "Send R200 from savings", "Gogo's meds from savings", 0f, -200f, 0f, 0f, Neutral,
+                    "R200 from savings, and Gogo's covered. Savings is at R{savings} now."),
                 Choice("not_this_week", "Not this week either", "", 0f, 0f, 0f, 6f, Neutral,
                     "That's a hard one to say twice. Your week stays as it was."));
             s.isFollowUp = true;
@@ -458,7 +471,7 @@ namespace MaliGo.Scenarios
                 Choice("in_for_dinner", "I'm in (R150)", "Birthday dinner", -150f, 0f, 0f, -4f, Discretionary,
                     "You're in. That's R150 of the week."),
                 Choice("gift_only", "Send R50 for the gift, skip the dinner", "Birthday gift", -50f, 0f, 0f, 2f, Neutral,
-                    "You showed up for her, {name}, just not at the table. R100 stays with you."),
+                    "R50 towards the gift, {name}. You'll miss the dinner, and R100 stays with you."),
                 Choice("not_this_time", "Not this time", "", 0f, 0f, 0f, 4f, Frugal,
                     "That message is hard to send. Your week stays as it was."));
         }
@@ -469,7 +482,7 @@ namespace MaliGo.Scenarios
                 "The geyser broke", "At home", "Something's up at home",
                 "The geyser element has burnt out: no hot water. Sipho from two doors down does plumbing on the side. He can fix it today for R350, parts included.",
                 "Cold water this morning, {name}. Sipho can fix it today.",
-                Choice("from_savings", "Pay from savings (R350)", "Geyser repair, from savings", 0f, -350f, 0f, 0f,
+                Choice("from_savings", "Pay from savings (R350)", "Geyser repair from savings", 0f, -350f, 0f, 0f,
                     Neutral, "R350 from savings, and there's hot water tonight. Savings is at R{savings} now."),
                 Choice("from_cash", "Pay from cash (R350)", "Geyser repair", -350f, 0f, 0f, 0f, Neutral,
                     "R350 from cash, and there's hot water tonight. You've got R{cash} in cash."),
@@ -523,7 +536,7 @@ namespace MaliGo.Scenarios
                     Frugal, "R300 into savings. Your {goalName} is at R{savings} of R{goalTarget}."),
                 Choice("keep_cash", "Keep it as cash", "From the neighbour", 300f, 0f, 0f, -5f, Discretionary,
                     "R300 in your pocket, {name}. Yours to use."),
-                Choice("half_half", "R150 cash, R150 savings", "From the neighbour, split", 150f, 150f, 0f, -2f, Neutral,
+                Choice("half_half", "R150 cash, R150 savings", "From the neighbour", 150f, 150f, 0f, -2f, Neutral,
                     "R150 each way. Some for now, some for your {goalName}."));
         }
 
@@ -543,6 +556,27 @@ namespace MaliGo.Scenarios
                     Choice("leave_it", "Leave it, hope pay comes first", "", 0f, 0f, 0f, 6f, Deferred,
                         "It goes off on payday either way. If pay lands after it, the bank adds a fee."),
                     1, 199f, 2, Payday, 0, "Gym debit order", "Gym", CatBills, KindCommitment));
+        }
+
+        // ------------------------------------------------------------------ Revision 4 (F1): the food week
+
+        /// <summary>
+        /// Day 5 for the food focus only (ChapterSchedule): friends doing a kota run. Every option has a cost the
+        /// card shows: R65 for the full kota (delivered, no energy), R30 and 10 energy for half a kota you fetch,
+        /// 20 energy to cook at home.
+        /// </summary>
+        static ScenarioDefinition KotaRun()
+        {
+            return Scenario(KotaRunId, ChapterSchedule.SpotCorner, "shoppingBasket", CatFood, "the kota run",
+                "Kota run tonight", "[Place]", "Your friends want a kota run",
+                "Your friends are doing a kota run tonight and want to know if you're in. A full kota and chips is R65, delivered. You could split one and fetch it, or cook at home.",
+                "Your friends are getting kotas tonight, {name}. Are you in?",
+                Choice("full_kota", "Full kota and chips (R65)", "Kota run with friends", -65f, 0f, 0f, -4f, Discretionary,
+                    "R65 for supper, and you ate it with your friends."),
+                Choice("share_kota", "Split one and fetch it (R30)", "Half a kota", -30f, 0f, -10f, -1f, Neutral,
+                    "R30 for your half, {name}. Fetching it took 10 energy."),
+                Choice("cook_home", "Cook with what's at home", "", 0f, 0f, -20f, 2f, Frugal,
+                    "No money out. Cooking supper took 20 energy."));
         }
     }
 }

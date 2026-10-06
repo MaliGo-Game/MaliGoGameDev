@@ -29,6 +29,21 @@ public static class MaliGoBuildPipeline
             Directory.CreateDirectory(outputDir);
         }
 
+        // Never let an older APK pass for this build's output.
+        if (File.Exists(ApkOutputPath))
+        {
+            try
+            {
+                File.Delete(ApkOutputPath);
+                Debug.Log($"[MaliGoBuildPipeline] Deleted the previous APK at {ApkOutputPath}.");
+            }
+            catch (System.Exception ex)
+            {
+                Fail($"[MaliGoBuildPipeline] BUILD FAILED: could not delete the previous APK at {ApkOutputPath}: {ex.Message}");
+                return;
+            }
+        }
+
         var options = new BuildPlayerOptions
         {
             scenes = new[] { CharacterCreationScenePath, WorldScenePath },
@@ -51,8 +66,20 @@ public static class MaliGoBuildPipeline
         }
         else
         {
-            Debug.LogError($"[MaliGoBuildPipeline] BUILD {summary.result}: {summary.totalErrors} error(s), {summary.totalWarnings} warning(s). " +
-                            "Check the Console above for the specific failure.");
+            Fail($"[MaliGoBuildPipeline] BUILD {summary.result}: {summary.totalErrors} error(s), {summary.totalWarnings} warning(s). " +
+                 "Check the Console above for the specific failure.");
+        }
+    }
+
+    /// <summary>
+    /// Logs the error and, in batch mode, exits Unity with code 1 so BUILD_BETA_APK.bat reports a failure.
+    /// </summary>
+    static void Fail(string message)
+    {
+        Debug.LogError(message);
+        if (Application.isBatchMode)
+        {
+            EditorApplication.Exit(1);
         }
     }
 

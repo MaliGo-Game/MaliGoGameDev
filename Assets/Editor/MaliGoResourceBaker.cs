@@ -5,14 +5,12 @@ using MaliGo.PlayerIdentity;
 
 /// <summary>
 /// Bakes everything the RUNTIME needs into Assets/Resources so it survives a player build.
-/// Without this the APK ships broken: KenneyRuntimeCatalogFactory and KenneyUiSprites both
-/// fall back to AssetDatabase, which is Editor-only, so in a build the player character
-/// never spawns and every UI panel loses its art.
+/// Without this the APK ships broken: KenneyRuntimeCatalogFactory falls back to AssetDatabase,
+/// which is Editor-only, so in a build the player character never spawns.
 /// </summary>
 public static class MaliGoResourceBaker
 {
     const string ResourcesRoot = "Assets/Resources";
-    const string UiResourceFolder = "Assets/Resources/MaliGoUI";
     const string CatalogAssetPath = "Assets/Resources/PlayerCharacterCatalog.asset";
 
     const string KenneyRoot = "Assets/kenney_animated-characters-protagonists";
@@ -20,23 +18,13 @@ public static class MaliGoResourceBaker
     const string AnimatorPath = "Assets/MaliGo/Characters/PlayerCharacterAnimator.controller";
     const string MaterialPath = "Assets/MaliGo/Characters/PlayerSkinMaterial.mat";
 
-    const string UiPackRoot = "Assets/kenney_ui-pack-adventure/PNG/Default";
-
-    static readonly string[] UiSpriteFiles =
-    {
-        "panel_brown.png",
-        "panel_grey_green.png",
-        "button_brown.png",
-        "banner_modern.png",
-        "panel_border_brown.png"
-    };
-
     [MenuItem("MaliGo/Build/Bake Runtime Resources")]
     public static void BakeAll()
     {
         EnsureFolder(ResourcesRoot);
-        EnsureFolder(UiResourceFolder);
-        BakeUiSprites();
+        // The Kenney adventure UI sprites are no longer baked (DESIGN_SPEC §7.13, D10): the new UI kit
+        // draws its own surfaces. Assets/Resources/MaliGoUI stays until WP9 removes every KenneyUiSprites
+        // use and deletes the folder.
         BakePlayerCharacterCatalog();
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
@@ -53,28 +41,6 @@ public static class MaliGoResourceBaker
         string parent = Path.GetDirectoryName(path).Replace('\\', '/');
         string leaf = Path.GetFileName(path);
         AssetDatabase.CreateFolder(parent, leaf);
-    }
-
-    static void BakeUiSprites()
-    {
-        foreach (string fileName in UiSpriteFiles)
-        {
-            string source = $"{UiPackRoot}/{fileName}";
-            string destination = $"{UiResourceFolder}/{fileName}";
-
-            if (AssetDatabase.LoadAssetAtPath<Texture2D>(destination) != null)
-            {
-                continue;
-            }
-
-            if (AssetDatabase.LoadAssetAtPath<Texture2D>(source) == null)
-            {
-                Debug.LogWarning($"[MaliGoResourceBaker] UI source missing: {source}");
-                continue;
-            }
-
-            AssetDatabase.CopyAsset(source, destination);
-        }
     }
 
     static void BakePlayerCharacterCatalog()

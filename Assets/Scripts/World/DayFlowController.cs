@@ -168,13 +168,32 @@ namespace MaliGo.World
 
         void ShowReveal(PlayerData data, NightResult night)
         {
-            if (MaliGoFeatures.EndOfDayReveal)
+            try
             {
-                reveal.Show(data, night, OnRevealDismissed);
+                if (MaliGoFeatures.EndOfDayReveal)
+                {
+                    reveal.Show(data, night, OnRevealDismissed);
+                }
+                else
+                {
+                    reveal.ShowPlain(RevealLineBuilder.PlainLine(night.record), RevealLineBuilder.ButtonLabel(night.record), OnRevealDismissed);
+                }
             }
-            else
+            catch (System.Exception ex)
             {
-                reveal.ShowPlain(RevealLineBuilder.PlainLine(night.record), RevealLineBuilder.ButtonLabel(night.record), OnRevealDismissed);
+                // A reveal that fails to build must never leave busy stuck (no more Sleep, no next day): close what
+                // opened and carry on as if it had been dismissed. The night is already saved.
+                Debug.LogException(ex);
+                try
+                {
+                    reveal.Hide();
+                }
+                catch (System.Exception hideEx)
+                {
+                    Debug.LogException(hideEx);
+                }
+
+                OnRevealDismissed();
             }
         }
 

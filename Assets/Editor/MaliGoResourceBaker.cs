@@ -25,8 +25,11 @@ public static class MaliGoResourceBaker
         // The Kenney adventure UI sprites are no longer baked or shipped (DESIGN_SPEC §7.13, D10): the new UI
         // kit draws its own surfaces.
         BakePlayerCharacterCatalog();
+        // SaveAssets only, no AssetDatabase.Refresh(): everything above goes through AssetDatabase.CreateAsset /
+        // SetDirty, which needs no refresh, and BuildAndroidBeta calls this right before BuildPlayer, where a
+        // Refresh could pick up the scripting-define change from MaliGoAndroidSetup.Configure, start a script
+        // recompile mid-build and fail the headless build.
         AssetDatabase.SaveAssets();
-        AssetDatabase.Refresh();
         Debug.Log("[MaliGoResourceBaker] Runtime resources baked into Assets/Resources.");
     }
 

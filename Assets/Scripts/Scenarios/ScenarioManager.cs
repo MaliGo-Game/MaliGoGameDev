@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using MaliGo.Characters;
+using MaliGo.Core;
 using MaliGo.Data;
 using MaliGo.PlayerIdentity;
 using UnityEngine;
@@ -6,9 +8,10 @@ using UnityEngine;
 namespace MaliGo.Scenarios
 {
     /// <summary>
-    /// Presents ScenarioDefinitions to the player, applies choice consequences to
-    /// PlayerData, and routes Mali's intro/reaction lines. One instance lives in
-    /// MaliGo_Systems for the lifetime of the world scene.
+    /// Opens the choice sheet for a scenario and resolves the chosen option (design spec 7.6): the choice is
+    /// applied by ScenarioOutcome inside UpdatePlayerData (saved at once), then Mali reacts in the blocking box
+    /// with a chip row built from the deltas. Mali's intro is shown inside the sheet, not in the dialogue box.
+    /// One instance lives in MaliGo_Systems for the lifetime of the world scene.
     /// </summary>
     [DefaultExecutionOrder(-100)]
     public class ScenarioManager : MonoBehaviour
@@ -52,7 +55,10 @@ namespace MaliGo.Scenarios
             }
         }
 
-        /// <summary>Returns false if a scenario is already open, or this one isn't available yet.</summary>
+        /// <summary>
+        /// Returns false if a scenario is already open, this one is completed or not for this life chapter, or no
+        /// choice is affordable (cannot happen with the chapter's content, 3.4). Otherwise opens the choice sheet.
+        /// </summary>
         public bool TryBeginScenario(ScenarioDefinition scenario)
         {
             if (scenario == null || scenarioInProgress)
@@ -60,7 +66,9 @@ namespace MaliGo.Scenarios
                 return false;
             }
 
-            var player = PlayerDataAccess.GetCurrentPlayer();
+            PlayerData player = PlayerDataAccess.GetCurrentPlayer();
+            scenario = ForProfile(scenario, player);
+
             if (player != null && !scenario.IsAvailableForLifeChapter(player.currentLifeChapter))
             {
                 return false;
@@ -72,148 +80,71 @@ namespace MaliGo.Scenarios
                 return false;
             }
 
-            scenarioInProgress = true;
-
-            string characterName = PlayerDataAccess.GetCharacterName();
-            MaliDialogueController maliDialogue = FindMaliDialogue();
-
-            if (maliDialogue != null && !string.IsNullOrWhiteSpace(scenario.introDialogue))
+            if (player != null && !ScenarioOutcome.AnyAvailable(player, scenario))
             {
-                maliDialogue.ShowFormatted(scenario.introDialogue, characterName);
+                return false;
             }
 
-            choiceUI.Show(scenario, choice => ResolveChoice(scenario, choice, maliDialogue, characterName));
+            scenarioInProgress = true;
+            ScenarioDefinition opened = scenario;
+            choiceUI.Show(opened, choice => ResolveChoice(opened, choice), () => scenarioInProgress = false);
             return true;
         }
 
-        void ResolveChoice(ScenarioDefinition scenario, ScenarioChoice choice, MaliDialogueController maliDialogue, string characterName)
+        /// <summary>
+        /// The trigger passes the profile's definition (ScenarioLibrary.Get(id, focus, travel), 7.5). Until every
+        /// caller does, the same id is looked up again for the player's profile; Get caches, so this returns the
+        /// very instance the caller passed when it was already the right one.
+        /// </summary>
+        static ScenarioDefinition ForProfile(ScenarioDefinition scenario, PlayerData player)
         {
-            ApplyConsequences(scenario, choice);
-
-            if (maliDialogue != null)
+            if (player?.spendingProfile == null || string.IsNullOrEmpty(scenario.scenarioId))
             {
-                string line = string.IsNullOrWhiteSpace(choice.maliReactionLine)
-                    ? "Noted, {0}. Let's carry on."
-                    : choice.maliReactionLine;
-                maliDialogue.ShowFormatted(line, characterName);
+                return scenario;
             }
 
-            scenarioInProgress = false;
+            ScenarioDefinition profiled = ScenarioLibrary.Get(scenario.scenarioId, player.spendingProfile.focus,
+                                                              player.spendingProfile.travel);
+            return profiled ?? scenario;
         }
 
-        static void ApplyConsequences(ScenarioDefinition scenario, ScenarioChoice choice)
+        void ResolveChoice(ScenarioDefinition scenario, ScenarioChoice choice)
         {
-            if (PlayerDataManager.Instance == null)
+            scenarioInProgress = false;
+            if (choice == null || PlayerDataManager.Instance == null)
             {
                 return;
             }
+
+            bool applied = false;
+            string reaction = null;
+            Dictionary<string, string> extra = null;
+            string[] chips = null;
 
             PlayerDataManager.Instance.UpdatePlayerData(data =>
             {
-                FinancialStats stats = data.financialStats;
-                stats.cash = Mathf.Max(0f, stats.cash + choice.cashDelta);
-                stats.savings = Mathf.Max(0f, stats.savings + choice.savingsDelta);
-                stats.financialStress = Mathf.Clamp(stats.financialStress + choice.financialStressDelta, 0f, 100f);
-                stats.energy = Mathf.Clamp(stats.energy + choice.energyDelta, 0f, 100f);
-                stats.financialXP += choice.financialXpDelta;
-
-                ApplyBehaviourSignal(stats, choice.behaviourTag);
-
-                data.financialProfile.spendingBehaviour = DescribeSpending(stats.spendingBehaviourScore);
-                data.financialProfile.savingBehaviour = DescribeSaving(stats.savingBehaviourScore);
-
-                MarkScenarioCompleted(data, scenario.scenarioId);
-                AddRepayments(data, scenario, choice);
+                // Everything that depends on the day is read before the choice changes anything.
+                reaction = ScenarioOutcome.ReactionFor(data, choice);
+                extra = ScenarioOutcome.ReactionExtra(data, choice);
+                chips = ScenarioOutcome.Chips(data, choice);
+                applied = ScenarioOutcome.Apply(data, scenario, choice);
             }, saveImmediately: true);
-        }
 
-        /// <summary>
-        /// Nudges the rolling behaviour scores toward this choice's signal rather than
-        /// overwriting them, so the player's financial profile reflects a pattern of
-        /// decisions instead of flipping on a single transaction.
-        /// </summary>
-        static void ApplyBehaviourSignal(FinancialStats stats, ScenarioBehaviourTag tag)
-        {
-            float spendSignal;
-            float saveSignal;
-
-            switch (tag)
+            if (!applied)
             {
-                case ScenarioBehaviourTag.Discretionary:
-                    spendSignal = 0.85f;
-                    saveSignal = 0.15f;
-                    break;
-                case ScenarioBehaviourTag.Frugal:
-                    spendSignal = 0.15f;
-                    saveSignal = 0.8f;
-                    break;
-                case ScenarioBehaviourTag.Deferred:
-                    spendSignal = 0.05f;
-                    saveSignal = 0.6f;
-                    break;
-                default:
-                    spendSignal = 0.5f;
-                    saveSignal = 0.5f;
-                    break;
+                Debug.LogWarning($"[ScenarioManager] '{scenario.scenarioId}/{choice.choiceId}' could not be applied.");
+                return;
             }
 
-            const float spendAlpha = 0.25f;
-            const float saveAlpha = 0.2f;
-            stats.spendingBehaviourScore = Mathf.Lerp(stats.spendingBehaviourScore, spendSignal, spendAlpha);
-            stats.savingBehaviourScore = Mathf.Lerp(stats.savingBehaviourScore, saveSignal, saveAlpha);
-        }
-
-        static string DescribeSpending(float score)
-        {
-            if (score > 0.6f) return "impulsive";
-            if (score < 0.35f) return "careful";
-            return "balanced";
-        }
-
-        static string DescribeSaving(float score)
-        {
-            if (score > 0.6f) return "consistent";
-            if (score < 0.35f) return "rarely";
-            return "sometimes";
-        }
-
-        /// <summary>
-        /// Turns a pay-later style choice into real repayments, so the cost keeps arriving
-        /// after the choice instead of ending at the deposit.
-        /// </summary>
-        static void AddRepayments(PlayerData data, ScenarioDefinition scenario, ScenarioChoice choice)
-        {
-            if (choice.instalmentCount <= 0 || choice.instalmentAmount <= 0f)
+            MaliDialogueController maliDialogue = FindMaliDialogue();
+            if (maliDialogue == null || string.IsNullOrWhiteSpace(reaction))
             {
                 return;
             }
 
-            int interval = Mathf.Max(1, choice.instalmentIntervalDays);
-            ObligationDefaults.AddObligation(data, new Obligation
-            {
-                obligationId = $"{scenario.scenarioId}_{choice.choiceId}",
-                label = string.IsNullOrWhiteSpace(choice.instalmentLabel) ? choice.label : choice.instalmentLabel,
-                amount = choice.instalmentAmount,
-                intervalDays = interval,
-                nextDueDay = data.currentDay + interval,
-                paymentsRemaining = choice.instalmentCount
-            });
-        }
-
-        static void MarkScenarioCompleted(PlayerData data, string scenarioId)
-        {
-            foreach (var id in data.completedScenarioIds)
-            {
-                if (id == scenarioId)
-                {
-                    return;
-                }
-            }
-
-            var updated = new string[data.completedScenarioIds.Length + 1];
-            data.completedScenarioIds.CopyTo(updated, 0);
-            updated[updated.Length - 1] = scenarioId;
-            data.completedScenarioIds = updated;
+            // Tokens are filled after the change, so {cash} and {savings} show the new values.
+            string line = MaliText.Fill(reaction, PlayerDataAccess.GetCurrentPlayer(), extra);
+            maliDialogue.Say(line, MaliLineMode.Blocking, null, chips);
         }
 
         static MaliDialogueController FindMaliDialogue()

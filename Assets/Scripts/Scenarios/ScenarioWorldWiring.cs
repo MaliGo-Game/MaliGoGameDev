@@ -3,15 +3,40 @@ using UnityEngine;
 namespace MaliGo.Scenarios
 {
     /// <summary>
-    /// Places scenario triggers into MaliGoWorld at runtime, the same way
-    /// MaliGoIdentityRuntimeBootstrap patches in identity systems. Keeps the existing
-    /// scene file untouched - no manual Editor step required to add a scenario location.
+    /// Places the six scenario spots into MaliGoWorld at runtime (DESIGN_SPEC §3.3), the same way
+    /// MaliGoIdentityRuntimeBootstrap patches in other systems. Keeps the scene file untouched. One trigger object
+    /// per spot, <c>ScenarioSpot_&lt;ID&gt;</c>, at anchor + offset (or the measured absolute position when the
+    /// anchor is missing). Every pair of interactables is at least 1.4 world units apart (2 x radius 0.7).
     /// </summary>
     public static class ScenarioWorldWiring
     {
-        const string CommercialHubAnchor = "Local_Commercial_Hub";
-        const string PlayerHouseAnchor = "Player_House";
-        const string DrivewayAnchor = "Road_Player_Driveway";
+        const float GroundY = 0.05f;
+
+        struct Spot
+        {
+            public string Id;
+            public string Anchor;
+            public Vector3 Offset;
+            public Vector2 FallbackXZ;
+
+            public Spot(string id, string anchor, Vector3 offset, Vector2 fallbackXZ)
+            {
+                Id = id;
+                Anchor = anchor;
+                Offset = offset;
+                FallbackXZ = fallbackXZ;
+            }
+        }
+
+        static readonly Spot[] Spots =
+        {
+            new Spot(ChapterSchedule.SpotCorner, "Road_T_Intersection", new Vector3(0.6f, 0f, 1.2f), new Vector2(0.6f, 1.2f)),
+            new Spot(ChapterSchedule.SpotTaxi, "Road_Crossing", new Vector3(0.2f, 0f, -0.5f), new Vector2(-1.8f, -0.5f)),
+            new Spot(ChapterSchedule.SpotHub, "Road_Connecting_End", new Vector3(0f, 0f, -0.4f), new Vector2(0.0f, 3.6f)),
+            new Spot(ChapterSchedule.SpotShopfront, "Road_Connecting_2", new Vector3(-1.5f, 0f, 1.1f), new Vector2(-1.5f, 3.1f)),
+            new Spot(ChapterSchedule.SpotGate, "Player_House", new Vector3(-1.2f, 0f, 1.9f), new Vector2(0.8f, -0.3f)),
+            new Spot(ChapterSchedule.SpotEast, "Road_Main_3", new Vector3(-0.4f, 0f, 0.9f), new Vector2(2.6f, 0.9f)),
+        };
 
         public static void EnsureScenarioManager(GameObject systemsRoot)
         {
@@ -21,65 +46,38 @@ namespace MaliGo.Scenarios
             }
         }
 
+        /// <summary>Kept for compatibility: ensures the CORNER spot, where lunch is offered.</summary>
         public static void EnsureFoodDecisionTrigger()
         {
-            EnsureTrigger("ScenarioTrigger_FoodDecision", CommercialHubAnchor,
-                new Vector3(0.41f, 0f, 0.41f), new Vector3(0.41f, 0.05f, 0.41f),
-                ScenarioLibrary.FoodDecisionId, "Press E for today's food decision");
+            EnsureSpot(Spots[0]);
         }
 
-        /// <summary>Places the rest of the P1 scenario triggers. Positions are a first pass -
-        /// nudge in the Editor if anything clips a fence/planter.</summary>
+        /// <summary>Places all six spot triggers (§3.3). Safe to call more than once.</summary>
         public static void EnsureAllScenarioTriggers()
         {
-            EnsureFoodDecisionTrigger();
-
-            EnsureTrigger("ScenarioTrigger_Transport", DrivewayAnchor,
-                new Vector3(0.3f, 0f, 0.3f), new Vector3(2.3f, 0.05f, 0.3f),
-                ScenarioLibrary.TransportDecisionId, "Press E to decide how to get around");
-
-            EnsureTrigger("ScenarioTrigger_Impulse", CommercialHubAnchor,
-                new Vector3(0f, 0f, -0.6f), new Vector3(-2.0f, 0.05f, 3.8f),
-                ScenarioLibrary.ImpulsePurchaseId, "Press E - something in the window caught your eye");
-
-            EnsureTrigger("ScenarioTrigger_Emergency", PlayerHouseAnchor,
-                new Vector3(0.5f, 0f, 0.3f), new Vector3(2.5f, 0.05f, -1.9f),
-                ScenarioLibrary.EmergencyExpenseId, "Press E - something needs attention at home");
-
-            EnsureTrigger("ScenarioTrigger_Windfall", PlayerHouseAnchor,
-                new Vector3(-0.5f, 0f, 0.3f), new Vector3(1.5f, 0.05f, -1.9f),
-                ScenarioLibrary.WindfallId, "Press E - check today's mail");
-
-            EnsureTrigger("ScenarioTrigger_FamilyObligation", PlayerHouseAnchor,
-                new Vector3(0f, 0f, 0.6f), new Vector3(2.0f, 0.05f, -1.6f),
-                ScenarioLibrary.FamilyObligationId, "Press E - a call from home");
-
-            EnsureTrigger("ScenarioTrigger_Stokvel", CommercialHubAnchor,
-                new Vector3(0.5f, 0f, -0.3f), new Vector3(-1.5f, 0.05f, 4.1f),
-                ScenarioLibrary.StokvelDecisionId, "Press E to hear about the stokvel");
-
-            EnsureTrigger("ScenarioTrigger_CreditBnpl", CommercialHubAnchor,
-                new Vector3(-0.5f, 0f, -0.3f), new Vector3(-2.5f, 0.05f, 4.1f),
-                ScenarioLibrary.CreditBnplId, "Press E to check out the easy-payment offer");
+            foreach (Spot spot in Spots)
+            {
+                EnsureSpot(spot);
+            }
         }
 
-        static void EnsureTrigger(string triggerObjectName, string anchorName, Vector3 offsetFromAnchor, Vector3 fallbackPosition, string scenarioId, string promptText)
+        static void EnsureSpot(Spot spot)
         {
-            if (GameObject.Find(triggerObjectName) != null)
+            string objectName = "ScenarioSpot_" + spot.Id;
+            if (GameObject.Find(objectName) != null)
             {
                 return;
             }
 
-            GameObject anchor = GameObject.Find(anchorName);
+            GameObject anchor = GameObject.Find(spot.Anchor);
             Vector3 position = anchor != null
-                ? anchor.transform.position + offsetFromAnchor
-                : fallbackPosition;
+                ? anchor.transform.position + spot.Offset
+                : new Vector3(spot.FallbackXZ.x, GroundY, spot.FallbackXZ.y);
 
-            var triggerObject = new GameObject(triggerObjectName);
+            var triggerObject = new GameObject(objectName);
             triggerObject.transform.position = position;
-
             var trigger = triggerObject.AddComponent<ScenarioTrigger>();
-            trigger.Configure(scenarioId, promptText);
+            trigger.ConfigureSpot(spot.Id);
         }
     }
 }

@@ -1,107 +1,219 @@
+using MaliGo.Core;
+using MaliGo.Data;
+using MaliGo.PlayerIdentity;
+using MaliGo.World;
 using UnityEngine;
 
 namespace MaliGo.Scenarios
 {
     /// <summary>
-    /// A physical world location the player walks up to and interacts with to receive
-    /// a scenario. Interaction pattern mirrors MaliCompanionInteraction (press E in range)
-    /// so scenario locations feel consistent with talking to Mali.
+    /// One scenario spot in the world (DESIGN_SPEC §3.3, §7.5): an <see cref="IInteractable"/> that offers the head
+    /// of its spot's queue, <c>ChapterSchedule.ActiveScenarioAtSpot</c> for the player's focus and follow-ups. The
+    /// definition comes from <c>ScenarioLibrary.Get(id, focus, travel)</c>, so prompt, place and amounts follow the
+    /// spending profile. Nothing active = unavailable (no prompt). It never polls input or builds its own prompt.
+    ///
+    /// <see cref="Configure"/> (a fixed scenario id) is kept for compatibility; the world uses
+    /// <see cref="ConfigureSpot"/>.
     /// </summary>
-    public class ScenarioTrigger : MonoBehaviour
+    public class ScenarioTrigger : MonoBehaviour, IInteractable
     {
+        const float RefreshSeconds = 0.5f;
+
         [Header("Scenario")]
+        [SerializeField] string spotId = "";
         [SerializeField] string scenarioId = "";
 
         [Header("Interaction")]
-        [SerializeField] float interactionRadius = 0.61f;
-        [SerializeField] KeyCode interactKey = KeyCode.E;
-        [SerializeField] string promptText = "Press E";
+        [SerializeField] float interactionRadius = 0.7f;
+        [SerializeField] string promptText = "";
 
-        Transform playerTransform;
-        GameObject promptRoot;
-        UnityEngine.UI.Text promptLabel;
+        ScenarioDefinition active;
+        bool dirty = true;
+        float nextRefreshTime;
+        bool subscribed;
 
+        public string SpotId => spotId;
+
+        /// <summary>The definition this spot offers right now, or null.</summary>
+        public ScenarioDefinition ActiveScenario
+        {
+            get
+            {
+                RefreshIfNeeded();
+                return active;
+            }
+        }
+
+        /// <summary>Legacy: a fixed scenario (no queue). Kept for compatibility.</summary>
         public void Configure(string newScenarioId, string newPromptText = null)
         {
-            scenarioId = newScenarioId;
+            scenarioId = newScenarioId ?? "";
             if (!string.IsNullOrWhiteSpace(newPromptText))
             {
                 promptText = newPromptText;
-                if (promptLabel != null)
-                {
-                    promptLabel.text = promptText;
-                }
-            }
-        }
-
-        void Awake()
-        {
-            BuildPromptUi();
-        }
-
-        void Update()
-        {
-            // A finished scenario's location goes quiet for good, including after a reload,
-            // because completion is read from the saved player data.
-            if (IsCompleted())
-            {
-                if (promptRoot != null && promptRoot.activeSelf)
-                {
-                    promptRoot.SetActive(false);
-                }
-                return;
             }
 
-            RefreshPlayerReference();
-            bool inRange = IsPlayerInRange();
-            bool scenarioBusy = ScenarioManager.Instance != null && ScenarioManager.Instance.IsScenarioInProgress;
-
-            if (promptRoot != null)
-            {
-                promptRoot.SetActive(inRange && !scenarioBusy);
-            }
-
-            if (inRange && !scenarioBusy && WasInteractPressed())
-            {
-                TryTrigger();
-            }
+            dirty = true;
         }
 
-        bool IsCompleted()
+        /// <summary>Makes this trigger the spot <paramref name="newSpotId"/> (a ChapterSchedule spot id).</summary>
+        public void ConfigureSpot(string newSpotId)
         {
-            var player = PlayerIdentity.PlayerDataAccess.GetCurrentPlayer();
-            return player != null && player.IsScenarioCompleted(scenarioId);
+            spotId = newSpotId ?? "";
+            dirty = true;
         }
 
-        void RefreshPlayerReference()
+        void OnEnable()
         {
-            if (playerTransform != null)
+            dirty = true;
+            TrySubscribe();
+            InteractionArbiter.Register(this);
+        }
+
+        void OnDisable()
+        {
+            InteractionArbiter.Unregister(this);
+            Unsubscribe();
+        }
+
+        void OnDestroy()
+        {
+            Unsubscribe();
+        }
+
+        void TrySubscribe()
+        {
+            if (subscribed || PlayerDataManager.Instance == null)
             {
                 return;
             }
 
-            GameObject player = GameObject.FindWithTag("Player");
-            playerTransform = player != null ? player.transform : null;
+            PlayerDataManager.Instance.OnPlayerDataChanged += HandlePlayerDataChanged;
+            subscribed = true;
         }
 
-        bool IsPlayerInRange()
+        void Unsubscribe()
         {
-            if (playerTransform == null)
+            if (!subscribed)
             {
-                return false;
+                return;
             }
 
-            Vector3 flatDelta = playerTransform.position - transform.position;
-            flatDelta.y = 0f;
-            return flatDelta.sqrMagnitude <= interactionRadius * interactionRadius;
+            if (PlayerDataManager.Instance != null)
+            {
+                PlayerDataManager.Instance.OnPlayerDataChanged -= HandlePlayerDataChanged;
+            }
+
+            subscribed = false;
         }
 
-        void TryTrigger()
+        void HandlePlayerDataChanged(PlayerData data)
         {
-            var scenario = ScenarioLibrary.GetById(scenarioId);
+            dirty = true;
+        }
+
+        void RefreshIfNeeded()
+        {
+            if (!subscribed)
+            {
+                TrySubscribe();
+            }
+
+            if (!dirty && Time.unscaledTime < nextRefreshTime)
+            {
+                return;
+            }
+
+            dirty = false;
+            nextRefreshTime = Time.unscaledTime + RefreshSeconds;
+            active = Resolve(PlayerDataAccess.GetCurrentPlayer());
+        }
+
+        ScenarioDefinition Resolve(PlayerData data)
+        {
+            if (data == null)
+            {
+                return null;
+            }
+
+            string focus = data.spendingProfile?.focus;
+            string travel = data.spendingProfile?.travel;
+
+            if (!string.IsNullOrEmpty(spotId))
+            {
+                string id = ChapterSchedule.ActiveScenarioAtSpot(data, spotId, MaliGoFeatures.ChapterSchedule,
+                    data.spendingProfile?.focus, data.followUps);
+                return string.IsNullOrEmpty(id) ? null : ScenarioLibrary.Get(id, focus, travel);
+            }
+
+            if (!string.IsNullOrEmpty(scenarioId) && !data.IsScenarioCompleted(scenarioId))
+            {
+                return ScenarioLibrary.Get(scenarioId, focus, travel);
+            }
+
+            return null;
+        }
+
+        // ------------------------------------------------------------------ IInteractable
+
+        public Vector3 InteractPosition => transform.position;
+
+        public float InteractRadius => interactionRadius;
+
+        public InteractPriority Priority => InteractPriority.World;
+
+        public bool IsAvailable
+        {
+            get
+            {
+                if (!isActiveAndEnabled)
+                {
+                    return false;
+                }
+
+                bool busy = ScenarioManager.Instance != null && ScenarioManager.Instance.IsScenarioInProgress;
+                return !busy && ActiveScenario != null;
+            }
+        }
+
+        public bool IsEnabled => true;
+
+        public string PromptText
+        {
+            get
+            {
+                ScenarioDefinition scenario = ActiveScenario;
+                if (scenario == null)
+                {
+                    return promptText;
+                }
+
+                if (!string.IsNullOrWhiteSpace(scenario.promptText))
+                {
+                    return scenario.promptText;
+                }
+
+                return !string.IsNullOrWhiteSpace(scenario.title) ? scenario.title : promptText;
+            }
+        }
+
+        public string ActionVerb => "Look";
+
+        public string PromptIcon
+        {
+            get
+            {
+                ScenarioDefinition scenario = ActiveScenario;
+                return scenario != null ? scenario.promptIcon : "";
+            }
+        }
+
+        public void Interact()
+        {
+            dirty = true;
+            ScenarioDefinition scenario = ActiveScenario;
             if (scenario == null)
             {
-                Debug.LogWarning($"[ScenarioTrigger] No scenario registered for id '{scenarioId}'.");
                 return;
             }
 
@@ -114,72 +226,8 @@ namespace MaliGo.Scenarios
             ScenarioManager.Instance.TryBeginScenario(scenario);
         }
 
-        bool WasInteractPressed()
+        public void OnDisabledTap()
         {
-            if (UI.MobileInputBridge.ConsumeInteractRequest())
-            {
-                return true;
-            }
-
-#if ENABLE_INPUT_SYSTEM
-            if (UnityEngine.InputSystem.Keyboard.current != null &&
-                UnityEngine.InputSystem.Keyboard.current.eKey.wasPressedThisFrame)
-            {
-                return true;
-            }
-#endif
-#if ENABLE_LEGACY_INPUT_MANAGER
-            return Input.GetKeyDown(interactKey);
-#else
-            return false;
-#endif
-        }
-
-        void BuildPromptUi()
-        {
-            var canvasObject = new GameObject("ScenarioPrompt_Canvas");
-            canvasObject.transform.SetParent(transform, false);
-
-            var canvas = canvasObject.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 15;
-
-            var scaler = canvasObject.AddComponent<UnityEngine.UI.CanvasScaler>();
-            scaler.uiScaleMode = UnityEngine.UI.CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920, 1080);
-
-            promptRoot = new GameObject("ScenarioPrompt");
-            promptRoot.transform.SetParent(canvasObject.transform, false);
-
-            var rect = promptRoot.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0.5f, 0f);
-            rect.anchorMax = new Vector2(0.5f, 0f);
-            rect.pivot = new Vector2(0.5f, 0f);
-            rect.anchoredPosition = new Vector2(0f, 210f);
-            rect.sizeDelta = new Vector2(420f, 36f);
-
-            var image = promptRoot.AddComponent<UnityEngine.UI.Image>();
-            image.color = new Color(0.059f, 0.369f, 0.180f, 0.88f);
-
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf")
-                        ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
-
-            var textObject = new GameObject("PromptText");
-            textObject.transform.SetParent(promptRoot.transform, false);
-            var textRect = textObject.AddComponent<RectTransform>();
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = new Vector2(12f, 4f);
-            textRect.offsetMax = new Vector2(-12f, -4f);
-
-            promptLabel = textObject.AddComponent<UnityEngine.UI.Text>();
-            promptLabel.font = font;
-            promptLabel.fontSize = 18;
-            promptLabel.alignment = TextAnchor.MiddleCenter;
-            promptLabel.color = new Color(0.976f, 1f, 0.965f);
-            promptLabel.text = promptText;
-
-            promptRoot.SetActive(false);
         }
 
         void OnDrawGizmosSelected()

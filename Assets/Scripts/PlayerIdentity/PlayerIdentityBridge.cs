@@ -13,6 +13,9 @@ namespace MaliGo.PlayerIdentity
         [SerializeField] PlayerCharacterCatalog catalog;
 
         IAppearanceVisualProvider appearanceProvider;
+        Material runtimeMaterial;
+        string appliedAppearanceKey;
+        PlayerCharacterVisualController appliedVisual;
 
         void Awake()
         {
@@ -60,6 +63,7 @@ namespace MaliGo.PlayerIdentity
         {
             visualController = visual;
             catalog = characterCatalog;
+            appliedAppearanceKey = null;
             appearanceProvider = catalog != null
                 ? new KenneyAppearanceVisualProvider(catalog)
                 : null;
@@ -77,12 +81,65 @@ namespace MaliGo.PlayerIdentity
                 return;
             }
 
-            appearanceProvider?.ApplyAppearance(data.appearance, visualController);
+            // OnPlayerDataChanged fires on every money change; the look is rebuilt only when it changed, and the
+            // material made for the previous look is destroyed so repeated changes don't leak materials.
+            string key = AppearanceKey(data.appearance);
+            if (key != appliedAppearanceKey || visualController != appliedVisual)
+            {
+                ApplyAppearance(data.appearance);
+                appliedAppearanceKey = key;
+                appliedVisual = visualController;
+            }
 
             if (!string.IsNullOrWhiteSpace(data.characterName))
             {
                 gameObject.name = $"Player_{SanitizeName(data.characterName)}";
             }
+        }
+
+        void ApplyAppearance(AppearanceData appearance)
+        {
+            if (appearance == null)
+            {
+                return;
+            }
+
+            Material material = catalog != null ? catalog.CreateRuntimeSkinMaterial(appearance) : null;
+            if (material != null)
+            {
+                visualController.SetSkinMaterial(material);
+                ReleaseRuntimeMaterial();
+                runtimeMaterial = material;
+                return;
+            }
+
+            appearanceProvider?.ApplyAppearance(appearance, visualController);
+        }
+
+        void ReleaseRuntimeMaterial()
+        {
+            if (runtimeMaterial != null)
+            {
+                Destroy(runtimeMaterial);
+            }
+
+            runtimeMaterial = null;
+        }
+
+        void OnDestroy()
+        {
+            ReleaseRuntimeMaterial();
+        }
+
+        static string AppearanceKey(AppearanceData a)
+        {
+            if (a == null)
+            {
+                return "";
+            }
+
+            return string.Join("|", a.skinTone, a.hairstyle, a.hairColor, a.clothing, a.accessories,
+                a.genderPresentation, a.bodyType);
         }
 
         static string SanitizeName(string name)

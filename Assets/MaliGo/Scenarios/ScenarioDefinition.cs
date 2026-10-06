@@ -14,14 +14,37 @@ namespace MaliGo.Scenarios
     {
         public string scenarioId = "";
         public string title = "";
+
+        /// <summary>The situation text shown in the choice panel.</summary>
         public string description = "";
         public string locationHint = "";
 
         [Tooltip("Empty = available regardless of the player's current Life Chapter.")]
         public LifeChapter[] requiredLifeChapters = Array.Empty<LifeChapter>();
 
-        [Tooltip("Mali's line shown before the choices are presented. \"{0}\" is replaced with the player's name.")]
+        [Tooltip("Mali's short line shown inside the choice panel. Tokens such as {name} are filled by MaliText.Fill.")]
         public string introDialogue = "";
+
+        /// <summary>World spot this scenario appears at (ChapterSchedule spot id, e.g. "CORNER").</summary>
+        public string spotId = "";
+
+        /// <summary>World prompt text, e.g. "Lunch at the kota shop".</summary>
+        public string promptText = "";
+
+        /// <summary>Icon name (Resources/MaliGo/Icons) for the prompt and the choice sheet.</summary>
+        public string promptIcon = "";
+
+        /// <summary>Money category of the choices' money events (design spec 2.2).</summary>
+        public string moneyCategory = "";
+
+        /// <summary>Eyebrow caption of the choice sheet, e.g. "Kota shop".</summary>
+        public string placeLabel = "";
+
+        /// <summary>What the Work prompt waits for when this scenario is the day's first, e.g. "lunch".</summary>
+        public string gateNoun = "";
+
+        /// <summary>True = never scheduled; only set off by a choice (a follow-up).</summary>
+        public bool isFollowUp;
 
         public ScenarioChoice[] choices = Array.Empty<ScenarioChoice>();
 

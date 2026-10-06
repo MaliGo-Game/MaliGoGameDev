@@ -1,5 +1,5 @@
-using System.Text;
-using MaliGo.Characters;
+using System.Collections.Generic;
+using MaliGo.Core;
 using MaliGo.Data;
 using MaliGo.Economy;
 using MaliGo.PlayerIdentity;
@@ -9,138 +9,166 @@ using UnityEngine;
 namespace MaliGo.World
 {
     /// <summary>
-    /// Home: the player's base. Shows current finances, the goal and upcoming bills, and is
-    /// where the day ends: sleeping moves to the next day, charges whatever bills fall due
-    /// and restores energy. Kept deliberately minimal - the fuller day cycle (an end-of-day
-    /// event and summary, new scenarios each day) builds on SleepAndEndDay().
+    /// Home (DESIGN_SPEC §5.4.6, §4.8): the Home sheet shows the day, money, energy, tonight's bills, what is still
+    /// owed and the next bill, all from the shared bill helpers (§2.4), and holds "Sleep: end Day {day}". Sleep
+    /// opens the confirm; on Sleep the confirm and the sheet both close (and pop) before
+    /// <see cref="GameEvents.RaiseSleepRequested"/> is raised. The night itself belongs to <c>DayFlowController</c>.
     /// </summary>
     public class HomeInteraction : ProximityInteraction
     {
+        const int MaxTonightRows = 3;
+
         ActionPanelUI panel;
+        SleepConfirmView sleepConfirm;
 
         protected override void OnAwake()
         {
-            SetPrompt("Press E to go inside");
+            SetPrompt("Home");
+            SetVerbAndIcon("Open", "home");
             panel = gameObject.AddComponent<ActionPanelUI>();
+            sleepConfirm = gameObject.AddComponent<SleepConfirmView>();
         }
 
         protected override bool CanInteract()
         {
-            return panel == null || !panel.IsOpen;
+            return (panel == null || !panel.IsOpen) && (sleepConfirm == null || !sleepConfirm.IsOpen);
         }
 
         protected override void OnInteract()
         {
-            panel.Show("Home", BuildStatusText, new[]
+            PlayerData data = PlayerDataAccess.GetCurrentPlayer();
+            int day = data != null ? data.currentDay : 0;
+            panel.ShowRows("Home", BuildRows, new[]
             {
-                new ActionPanelUI.ActionButton("Sleep - end the day", SleepAndEndDay)
+                new ActionPanelUI.ActionButton("Sleep: end Day " + day, OpenSleepConfirm, "hourglass")
             });
         }
 
-        string BuildStatusText()
+        void OpenSleepConfirm()
         {
+            sleepConfirm.Open(PlayerDataAccess.GetCurrentPlayer(), ConfirmSleep);
+        }
+
+        void ConfirmSleep()
+        {
+            // The confirm has already closed and popped itself; close the Home sheet too, then ask for the night.
+            if (sleepConfirm.IsOpen)
+            {
+                sleepConfirm.Close();
+            }
+
+            panel.HideImmediate();
+            GameEvents.RaiseSleepRequested();
+        }
+
+        // ================================================================ rows (§4.8 Home sheet)
+
+        static IReadOnlyList<(string label, string value, bool attention)> BuildRows()
+        {
+            var rows = new List<(string label, string value, bool attention)>();
             PlayerData data = PlayerDataAccess.GetCurrentPlayer();
             if (data?.financialStats == null)
             {
-                return "No data yet.";
+                return rows;
             }
 
             FinancialStats stats = data.financialStats;
-            FinancialGoal goal = data.GetPrimaryGoal();
+            rows.Add(("Day", data.currentDay.ToString(System.Globalization.CultureInfo.InvariantCulture), false));
+            rows.Add(("Cash", MoneyFormat.Rand(stats.cash), false));
+            rows.Add(("Savings", MoneyFormat.Rand(stats.savings), false));
+            rows.Add(("Energy", Mathf.RoundToInt(Mathf.Clamp(stats.energy, 0f, 100f))
+                .ToString(System.Globalization.CultureInfo.InvariantCulture), false));
+            rows.Add((null, null, false));
 
-            var text = new StringBuilder();
-            text.Append($"Day {data.currentDay}\n");
-            text.Append($"Cash: R{stats.cash:0}\n");
-            text.Append($"Savings: R{stats.savings:0}\n");
-            text.Append($"Financial Stress: {stats.financialStress:0}%\n");
-            text.Append($"Energy: {stats.energy:0}%\n");
-            text.Append($"Goal - {goal.goalName}: R{goal.currentAmount:0} / R{goal.targetAmount:0}\n");
-            AppendBills(text, data);
-            return text.ToString();
-        }
-
-        static void AppendBills(StringBuilder text, PlayerData data)
-        {
-            if (data.obligations == null || data.obligations.Length == 0)
+            List<DueItem> tonight = ObligationLedger.DueOnNight(data, data.currentDay);
+            if (tonight.Count == 0)
             {
-                return;
+                rows.Add(("Tonight", "Nothing due", false));
+            }
+            else
+            {
+                float rest = 0f;
+                for (int i = 0; i < tonight.Count; i++)
+                {
+                    DueItem item = tonight[i];
+                    if (i < MaxTonightRows - 1 || tonight.Count == MaxTonightRows)
+                    {
+                        rows.Add((i == 0 ? "Tonight" : "", Short(item) + " " + MoneyFormat.Rand(item.Total), false));
+                    }
+                    else
+                    {
+                        rest += item.Total;
+                    }
+                }
+
+                if (rest > 0.005f)
+                {
+                    rows.Add(("", (tonight.Count - (MaxTonightRows - 1)) + " more " + MoneyFormat.Rand(rest), false));
+                }
             }
 
-            text.Append("\nBills:\n");
-            foreach (Obligation bill in data.obligations)
+            Obligation owed = ObligationLedger.LargestArrears(data);
+            if (owed != null)
             {
-                if (bill == null)
+                string label = string.IsNullOrEmpty(owed.shortLabel) ? owed.label : owed.shortLabel;
+                rows.Add(("Still owed", label + " " + MoneyFormat.Rand(owed.arrears), true));
+                rows.Add(("The Bank is up the road.", "", false));
+            }
+
+            DueItem? next = NextAfterTonight(data);
+            rows.Add(("Next", next.HasValue ? NextText(next.Value) : "No bills till payday", false));
+            return rows;
+        }
+
+        static string Short(DueItem item)
+        {
+            return string.IsNullOrEmpty(item.shortLabel) ? item.label : item.shortLabel;
+        }
+
+        static string NextText(DueItem item)
+        {
+            string when = item.day >= ChapterConfig.PaydayDay
+                ? "payday"
+                : "Day " + item.day.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return Short(item) + " " + MoneyFormat.Rand(item.amount) + " · " + when;
+        }
+
+        /// <summary>
+        /// "Next" = <see cref="ObligationLedger.NextDue"/> after tonight (§5.4.6): asked of a copy of the state in
+        /// which tonight's payments have already been counted off (nothing in the real save changes).
+        /// </summary>
+        static DueItem? NextAfterTonight(PlayerData data)
+        {
+            int today = data.currentDay;
+            var probe = new PlayerData
+            {
+                currentDay = today + 1,
+                obligations = new Obligation[data.obligations?.Length ?? 0]
+            };
+
+            for (int i = 0; i < probe.obligations.Length; i++)
+            {
+                Obligation source = data.obligations[i];
+                if (source == null)
                 {
                     continue;
                 }
 
-                text.Append($"{bill.label}: R{bill.amount:0}");
-                if (bill.paymentsRemaining != 0)
+                Obligation copy = JsonUtility.FromJson<Obligation>(JsonUtility.ToJson(source));
+                int interval = Mathf.Max(1, copy.intervalDays);
+                while (copy.paymentsRemaining != 0 && copy.nextDueDay <= today)
                 {
-                    // Bills are charged when the player sleeps, so count in nights: a bill due
-                    // on tomorrow's day number comes off tonight.
-                    int nights = bill.nextDueDay - data.currentDay;
-                    text.Append(nights <= 1 ? " due tonight" : $" due in {nights} nights");
+                    copy.nextDueDay += interval;
+                    if (copy.paymentsRemaining > 0)
+                    {
+                        copy.paymentsRemaining--;
+                    }
                 }
 
-                if (bill.arrears > 0f)
-                {
-                    text.Append($" (R{bill.arrears:0} still owed)");
-                }
-
-                text.Append('\n');
-            }
-        }
-
-        void SleepAndEndDay()
-        {
-            if (PlayerDataManager.Instance == null)
-            {
-                return;
+                probe.obligations[i] = copy;
             }
 
-            NightResult result = null;
-
-            // Interim (WP1): the night runs through DayCycle (bills, close the day, open the next).
-            // WP5/WP7 replace this whole flow with the sleep confirm and DayFlowController.
-            PlayerDataManager.Instance.UpdatePlayerData(data =>
-            {
-                result = DayCycle.EndDay(data);
-            }, saveImmediately: true);
-
-            ObligationSettlement settlement = result?.settlement;
-            if (settlement != null)
-            {
-                ShowMaliLine(DescribeNight(settlement));
-            }
-        }
-
-        /// <summary>What happened overnight, stated plainly: what was paid and what's still owed. No verdict.</summary>
-        static string DescribeNight(ObligationSettlement settlement)
-        {
-            var line = new StringBuilder($"Morning, {{0}}. Day {settlement.day}.");
-
-            if (settlement.payments.Count == 0)
-            {
-                line.Append(" No bills came off overnight.");
-                return line.ToString();
-            }
-
-            foreach (ObligationPayment payment in settlement.payments)
-            {
-                line.Append(payment.stillOwed > 0f
-                    ? $" {payment.label}: R{payment.paid:0} paid, R{payment.stillOwed:0} still owed."
-                    : $" {payment.label}: R{payment.paid:0} paid.");
-            }
-
-            return line.ToString();
-        }
-
-        static void ShowMaliLine(string template)
-        {
-            GameObject maliObject = GameObject.Find("Mali");
-            MaliDialogueController dialogue = maliObject != null ? maliObject.GetComponent<MaliDialogueController>() : null;
-            dialogue?.ShowFormatted(template, PlayerDataAccess.GetCharacterName());
+            return ObligationLedger.NextDue(probe);
         }
     }
 }

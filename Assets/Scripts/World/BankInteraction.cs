@@ -1,23 +1,28 @@
-using MaliGo.Characters;
+using System.Collections.Generic;
 using MaliGo.Data;
+using MaliGo.Economy;
 using MaliGo.PlayerIdentity;
 using MaliGo.UI;
-using UnityEngine;
 
 namespace MaliGo.World
 {
     /// <summary>
-    /// Bank: makes the cash/savings split a deliberate, causal action rather than cosmetic -
-    /// depositing/withdrawing/contributing always moves exactly the amount actually
-    /// available (never credits more to one bucket than was debited from the other).
+    /// Bank (DESIGN_SPEC §5.4.6, §4.8): moves whole amounts between cash and savings through
+    /// <see cref="BankRules"/> (and so the money recorder). Chips R50 / R100 / R200 each way; a chip is disabled
+    /// when the pool cannot cover it (no partial moves). The sheet stays open and its values refresh in place.
+    /// No Mali line.
     /// </summary>
     public class BankInteraction : ProximityInteraction
     {
+        const string MoveGroup = "Move to savings";
+        const string TakeOutGroup = "Take out of savings";
+
         ActionPanelUI panel;
 
         protected override void OnAwake()
         {
-            SetPrompt("Press E to enter the bank");
+            SetPrompt("Bank");
+            SetVerbAndIcon("Open", "pouch");
             panel = gameObject.AddComponent<ActionPanelUI>();
         }
 
@@ -28,115 +33,81 @@ namespace MaliGo.World
 
         protected override void OnInteract()
         {
-            panel.Show("Bank", BuildStatusText, new[]
+            var actions = new List<ActionPanelUI.ActionButton>();
+            foreach (float amount in BankRules.Amounts)
             {
-                new ActionPanelUI.ActionButton("Deposit R50", () => Deposit(50f)),
-                new ActionPanelUI.ActionButton("Deposit R100", () => Deposit(100f)),
-                new ActionPanelUI.ActionButton("Withdraw R50", () => Withdraw(50f)),
-                new ActionPanelUI.ActionButton("Contribute R50 to goal", () => ContributeToGoal(50f))
-            });
+                float a = amount;
+                actions.Add(ActionPanelUI.ActionButton.Chip(MoveGroup, MoneyFormat.Rand(a), "pouch_add",
+                    () => MoveToSavings(a), () => CanAfford(a, true), "Not enough cash"));
+            }
+
+            foreach (float amount in BankRules.Amounts)
+            {
+                float a = amount;
+                actions.Add(ActionPanelUI.ActionButton.Chip(TakeOutGroup, MoneyFormat.Rand(a), "pouch_remove",
+                    () => TakeOut(a), () => CanAfford(a, false), "Not enough savings"));
+            }
+
+            panel.ShowRows("Bank", BuildRows, actions, GoalProgress);
         }
 
-        string BuildStatusText()
+        static IReadOnlyList<(string label, string value, bool attention)> BuildRows()
         {
+            var rows = new List<(string label, string value, bool attention)>();
             PlayerData data = PlayerDataAccess.GetCurrentPlayer();
             if (data?.financialStats == null)
             {
-                return "No data yet.";
+                return rows;
             }
 
-            FinancialStats stats = data.financialStats;
+            rows.Add(("Cash", MoneyFormat.Rand(data.financialStats.cash), false));
+            rows.Add(("Savings", MoneyFormat.Rand(data.financialStats.savings), false));
             FinancialGoal goal = data.GetPrimaryGoal();
+            if (goal != null)
+            {
+                rows.Add(("Goal", goal.goalName + " " + MoneyFormat.Rand(goal.targetAmount), false));
+            }
 
-            return $"Cash: R{stats.cash:0}\n" +
-                   $"Savings: R{stats.savings:0}\n" +
-                   $"Goal - {goal.goalName}: R{goal.currentAmount:0} / R{goal.targetAmount:0}\n\n" +
-                   "Deposits and withdrawals move exactly what you have available.";
+            return rows;
         }
 
-        void Deposit(float requestedAmount)
+        static float GoalProgress()
         {
-            if (PlayerDataManager.Instance == null)
+            PlayerData data = PlayerDataAccess.GetCurrentPlayer();
+            FinancialGoal goal = data?.GetPrimaryGoal();
+            return goal != null && data.financialStats != null ? goal.Progress(data.financialStats.savings) : 0f;
+        }
+
+        static bool CanAfford(float amount, bool fromCash)
+        {
+            FinancialStats stats = PlayerDataAccess.GetFinancialStats();
+            if (stats == null)
+            {
+                return false;
+            }
+
+            float pool = fromCash ? stats.cash : stats.savings;
+            return pool >= amount - MoneyRecorder.Tolerance;
+        }
+
+        static void MoveToSavings(float amount)
+        {
+            if (PlayerDataManager.Instance == null || !CanAfford(amount, true))
             {
                 return;
             }
 
-            float actual = 0f;
-            PlayerDataManager.Instance.UpdatePlayerData(data =>
-            {
-                FinancialStats stats = data.financialStats;
-                actual = Mathf.Min(stats.cash, requestedAmount);
-                stats.cash -= actual;
-                stats.savings += actual;
-            }, saveImmediately: true);
-
-            if (actual > 0f)
-            {
-                ShowMaliLine($"R{actual:0} moved into savings, {{0}}. That's protected from everyday spending now.");
-            }
-            else
-            {
-                ShowMaliLine("There's nothing in your cash to move right now, {0}.");
-            }
+            PlayerDataManager.Instance.UpdatePlayerData(data => BankRules.MoveToSavings(data, amount), saveImmediately: true);
         }
 
-        void Withdraw(float requestedAmount)
+        static void TakeOut(float amount)
         {
-            if (PlayerDataManager.Instance == null)
+            if (PlayerDataManager.Instance == null || !CanAfford(amount, false))
             {
                 return;
             }
 
-            float actual = 0f;
-            PlayerDataManager.Instance.UpdatePlayerData(data =>
-            {
-                FinancialStats stats = data.financialStats;
-                actual = Mathf.Min(stats.savings, requestedAmount);
-                stats.savings -= actual;
-                stats.cash += actual;
-            }, saveImmediately: true);
-
-            if (actual > 0f)
-            {
-                ShowMaliLine($"R{actual:0} back into your cash, {{0}}. It's available again, for better or worse.");
-            }
-            else
-            {
-                ShowMaliLine("There's nothing in savings to draw from right now, {0}.");
-            }
-        }
-
-        void ContributeToGoal(float requestedAmount)
-        {
-            if (PlayerDataManager.Instance == null)
-            {
-                return;
-            }
-
-            float actual = 0f;
-            PlayerDataManager.Instance.UpdatePlayerData(data =>
-            {
-                FinancialStats stats = data.financialStats;
-                actual = Mathf.Min(stats.cash, requestedAmount);
-                stats.cash -= actual;
-                data.GetPrimaryGoal().Deposit(actual);
-            }, saveImmediately: true);
-
-            if (actual > 0f)
-            {
-                ShowMaliLine($"R{actual:0} closer to your goal, {{0}}.");
-            }
-            else
-            {
-                ShowMaliLine("There's nothing in your cash to put toward that right now, {0}.");
-            }
-        }
-
-        static void ShowMaliLine(string template)
-        {
-            GameObject maliObject = GameObject.Find("Mali");
-            MaliDialogueController dialogue = maliObject != null ? maliObject.GetComponent<MaliDialogueController>() : null;
-            dialogue?.ShowFormatted(template, PlayerDataAccess.GetCharacterName());
+            PlayerDataManager.Instance.UpdatePlayerData(data => BankRules.TakeOut(data, amount), saveImmediately: true);
         }
     }
 }

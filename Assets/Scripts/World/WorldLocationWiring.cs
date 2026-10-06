@@ -4,7 +4,8 @@ namespace MaliGo.World
 {
     /// <summary>
     /// Places Home/Bank/Work into the already-built MaliGoWorld scene at runtime, the same
-    /// self-healing pattern as ScenarioWorldWiring - no manual Editor step required.
+    /// self-healing pattern as ScenarioWorldWiring - no manual Editor step required. Positions (DESIGN_SPEC §3.3):
+    /// Home (2.0, -1.2), Bank (-1.7, 4.7), Work (4.0, 0.3).
     /// </summary>
     public static class WorldLocationWiring
     {
@@ -18,6 +19,17 @@ namespace MaliGo.World
             EnsureHome();
             EnsureBank();
             EnsureWork();
+            EnsureInteraction();
+        }
+
+        /// <summary>
+        /// The locations are useless without the arbiter and the prompt. The bootstrap creates both in its own
+        /// "interaction" step; this idempotent call only makes sure they exist if that step has not run.
+        /// </summary>
+        static void EnsureInteraction()
+        {
+            InteractionArbiter.Ensure(GameObject.Find("MaliGo_Systems"));
+            MaliGo.UI.WorldPromptView.Ensure();
         }
 
         static void EnsureHome()
@@ -61,8 +73,8 @@ namespace MaliGo.World
                 return;
             }
 
-            // Deliberately away from the commercial hub cluster (already 4 scenario
-            // triggers there) - the far end of the main road stands in for "town."
+            // The far end of the main road stands in for "town" (reachable from the west side of the
+            // parked van; 1.52 from the EAST spot, DESIGN_SPEC 3.3).
             GameObject anchor = GameObject.Find(EastRoadAnchor);
             Vector3 position = anchor != null
                 ? anchor.transform.position + new Vector3(0f, 0f, 0.3f)

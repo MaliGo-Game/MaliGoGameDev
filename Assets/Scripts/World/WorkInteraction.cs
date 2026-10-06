@@ -1,87 +1,176 @@
+using System.Collections.Generic;
 using MaliGo.Characters;
+using MaliGo.Core;
 using MaliGo.Data;
+using MaliGo.Economy;
 using MaliGo.PlayerIdentity;
+using MaliGo.Scenarios;
 using UnityEngine;
 
 namespace MaliGo.World
 {
     /// <summary>
-    /// Work: go to work, receive income, Mali reacts. No panel - it's an action, not a
-    /// decision with trade-offs. One shift per in-game day, and a shift needs energy, so
-    /// income is limited and skipping meals or walking everywhere has a cost you can feel.
+    /// Work (DESIGN_SPEC §7.1, §4.2.2, §4.8): one shift a day through <see cref="WorkRules"/>, opening only after
+    /// the day's gate scenario (A1). The prompt is visible in every state so the player can always find Work and
+    /// read why it is shut: Open = "Take a shift (+R150)"; NotYet = "Shift opens after {gate}"; Done = "Shift done
+    /// for today"; Tired = "Too tired for a shift". A tap on a shut Work calls <see cref="OnDisabledTap"/>, which
+    /// has Mali say why (Passing).
     /// </summary>
     public class WorkInteraction : ProximityInteraction
     {
-        const float IncomeAmount = 150f;
-        const float EnergyCost = 20f;
+        const string OpenPrompt = "Take a shift (+R150)";
+        const string NotYetPrompt = "Shift opens after {gate}";
+        const string DonePrompt = "Shift done for today";
+        const string TiredPrompt = "Too tired for a shift";
 
-        const string ReadyPrompt = "Press E to work";
-        // Short enough to fit the 420px prompt box at font size 18.
-        const string DonePrompt = "Done for today - sleep at home";
+        const string ShiftDoneLine = "R150 for the shift, {name}.";
+        const string AlreadyWorkedLine = "That's today's shift done. There's another one tomorrow.";
+        const string TiredLine = "A shift needs 60 energy, and you've got {energy}. Sleep brings it back to 100.";
+        const string NotYetLine = "The shift opens after {gate}. A shift needs 60 energy.";
 
-        bool showingDonePrompt;
+        int stateFrame = -1;
+        ShiftState state = ShiftState.NotYet;
+        string gateScenarioId;
+        string gateNoun = "";
+        bool hasData;
 
         protected override void OnAwake()
         {
-            SetPrompt(ReadyPrompt);
+            SetPrompt(OpenPrompt);
+            SetVerbAndIcon("Work", "wrench");
         }
 
-        protected override bool CanInteract()
+        public override bool IsEnabled
         {
-            // Stays interactable after the shift so the player is told why there's no more
-            // work today, instead of the prompt silently disappearing.
-            bool worked = HasWorkedToday(PlayerDataAccess.GetCurrentPlayer());
-            if (worked != showingDonePrompt)
+            get
             {
-                showingDonePrompt = worked;
-                SetPrompt(worked ? DonePrompt : ReadyPrompt);
+                Refresh();
+                return hasData && state == ShiftState.Open;
             }
+        }
 
-            return true;
+        public override string PromptText
+        {
+            get
+            {
+                Refresh();
+                if (!hasData)
+                {
+                    return OpenPrompt;
+                }
+
+                switch (state)
+                {
+                    case ShiftState.Open: return OpenPrompt;
+                    case ShiftState.Done: return DonePrompt;
+                    case ShiftState.Tired: return TiredPrompt;
+                    default: return NotYetPrompt.Replace("{gate}", gateNoun);
+                }
+            }
         }
 
         protected override void OnInteract()
         {
-            PlayerData player = PlayerDataAccess.GetCurrentPlayer();
-            if (PlayerDataManager.Instance == null || player?.financialStats == null)
+            if (PlayerDataManager.Instance == null)
             {
                 return;
             }
 
-            if (HasWorkedToday(player))
+            stateFrame = -1;
+            Refresh();
+            if (!hasData || state != ShiftState.Open)
             {
-                ShowMaliLine("That's today's shift done, {0}. Sleep at home and there's work again tomorrow.");
+                OnDisabledTap();
                 return;
             }
 
-            if (player.financialStats.energy < EnergyCost)
+            string gate = gateScenarioId;
+            MoneyEvent pay = null;
+            PlayerDataManager.Instance.UpdatePlayerData(data => pay = WorkRules.DoShift(data, gate), saveImmediately: true);
+            stateFrame = -1;
+
+            if (pay != null)
             {
-                ShowMaliLine("Not enough energy left for a shift today, {0}. Food and sleep bring it back.");
-                return;
+                Say(ShiftDoneLine, null);
             }
-
-            PlayerDataManager.Instance.UpdatePlayerData(data =>
-            {
-                var stats = data.financialStats;
-                stats.cash += IncomeAmount;
-                stats.energy = Mathf.Clamp(stats.energy - EnergyCost, 0f, 100f);
-                stats.financialXP += 5f;
-                data.lastWorkedDay = data.currentDay;
-            }, saveImmediately: true);
-
-            ShowMaliLine($"R{IncomeAmount:0} for the day's work, {{0}}. What you do with it is up to you.");
         }
 
-        static bool HasWorkedToday(PlayerData player)
+        public override void OnDisabledTap()
         {
-            return player != null && player.lastWorkedDay >= player.currentDay;
+            stateFrame = -1;
+            Refresh();
+            if (!hasData)
+            {
+                return;
+            }
+
+            switch (state)
+            {
+                case ShiftState.Done:
+                    Say(AlreadyWorkedLine, null);
+                    break;
+                case ShiftState.Tired:
+                    Say(TiredLine, null);
+                    break;
+                case ShiftState.NotYet:
+                    Say(NotYetLine, new Dictionary<string, string> { { "gate", gateNoun } });
+                    break;
+            }
         }
 
-        static void ShowMaliLine(string template)
+        /// <summary>Reads <see cref="WorkRules.State"/> at most once per frame.</summary>
+        void Refresh()
+        {
+            if (stateFrame == Time.frameCount)
+            {
+                return;
+            }
+
+            stateFrame = Time.frameCount;
+            PlayerData data = PlayerDataAccess.GetCurrentPlayer();
+            hasData = data != null;
+            if (!hasData)
+            {
+                gateScenarioId = null;
+                gateNoun = "";
+                state = ShiftState.NotYet;
+                return;
+            }
+
+            string focus = data.spendingProfile?.focus;
+            string gate = MaliGoFeatures.ChapterSchedule
+                ? ChapterSchedule.GateScenario(data.currentDay, data.spendingProfile?.focus)
+                : null;
+            if (gate != gateScenarioId)
+            {
+                gateScenarioId = gate;
+                ScenarioDefinition definition = string.IsNullOrEmpty(gate)
+                    ? null
+                    : ScenarioLibrary.Get(gate, focus, data.spendingProfile?.travel);
+                gateNoun = definition != null ? definition.gateNoun ?? "" : "";
+            }
+
+            state = WorkRules.State(data, gateScenarioId);
+        }
+
+        static void Say(string template, IDictionary<string, string> extra)
+        {
+            PlayerData data = PlayerDataAccess.GetCurrentPlayer();
+            MaliDialogueController dialogue = FindMaliDialogue();
+            if (dialogue == null)
+            {
+                return;
+            }
+
+            // Filled here so the line is final whichever dialogue version is in the build; ShowLine = Passing.
+            dialogue.ShowLine(MaliText.Fill(template, data, extra));
+        }
+
+        static MaliDialogueController FindMaliDialogue()
         {
             GameObject maliObject = GameObject.Find("Mali");
             MaliDialogueController dialogue = maliObject != null ? maliObject.GetComponent<MaliDialogueController>() : null;
-            dialogue?.ShowFormatted(template, PlayerDataAccess.GetCharacterName());
+            return dialogue != null ? dialogue : FindFirstObjectByType<MaliDialogueController>();
         }
     }
 }

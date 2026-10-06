@@ -1,5 +1,6 @@
 using UnityEngine;
 using MaliGo.Characters;
+using MaliGo.UI.Kit;
 
 [RequireComponent(typeof(CharacterController))]
 [RequireComponent(typeof(Rigidbody))]
@@ -119,6 +120,12 @@ public class MaliGoPlayerController : MonoBehaviour
     {
         Vector2 input = Vector2.zero;
 
+        // No walking while a sheet, Mali's blocking box, the reveal or pause is open (DESIGN_SPEC 7.2).
+        if (UiModal.IsAnyOpen)
+        {
+            return input;
+        }
+
         if (useKeyboardInput)
         {
 #if ENABLE_INPUT_SYSTEM
@@ -129,15 +136,6 @@ public class MaliGoPlayerController : MonoBehaviour
                 if (kb.sKey.isPressed || kb.downArrowKey.isPressed) input.y -= 1f;
                 if (kb.aKey.isPressed || kb.leftArrowKey.isPressed) input.x -= 1f;
                 if (kb.dKey.isPressed || kb.rightArrowKey.isPressed) input.x += 1f;
-            }
-#endif
-            // Fallback to legacy axes if no new input system event detected
-#if ENABLE_LEGACY_INPUT_MANAGER
-            if (input == Vector2.zero)
-            {
-                float h = Input.GetAxisRaw("Horizontal");
-                float v = Input.GetAxisRaw("Vertical");
-                input += new Vector2(h, v);
             }
 #endif
         }

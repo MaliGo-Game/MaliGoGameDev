@@ -1,29 +1,37 @@
+using UnityEngine;
+
 namespace MaliGo.UI
 {
     /// <summary>
-    /// Lets the on-screen mobile interact button feed the same "was interact pressed this
-    /// frame" question that MaliCompanionInteraction and ScenarioTrigger already ask about
-    /// the keyboard E key - one shared flag instead of duplicating touch-handling in both.
+    /// Kept for compatibility (DESIGN_SPEC §7.1): <see cref="RequestInteract"/> forwards to
+    /// <see cref="World.InteractionArbiter.RequestInteract"/>, which owns the one interact request and clears it
+    /// every frame. <see cref="ConsumeInteractRequest"/> still answers "was interact requested", but only for the
+    /// frame of the request and the next one, so a stale tap never fires later.
     /// </summary>
     public static class MobileInputBridge
     {
-        static bool interactRequested;
+        const int NoRequest = int.MinValue / 2;
+
+        static int requestFrame = NoRequest;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics()
+        {
+            requestFrame = NoRequest;
+        }
 
         public static void RequestInteract()
         {
-            interactRequested = true;
+            requestFrame = Time.frameCount;
+            World.InteractionArbiter.RequestInteract();
         }
 
-        /// <summary>Returns true at most once per request - consumes the flag.</summary>
+        /// <summary>True at most once per request, and only in the request's frame or the next.</summary>
         public static bool ConsumeInteractRequest()
         {
-            if (!interactRequested)
-            {
-                return false;
-            }
-
-            interactRequested = false;
-            return true;
+            bool fresh = Time.frameCount - requestFrame <= 1;
+            requestFrame = NoRequest;
+            return fresh;
         }
     }
 }

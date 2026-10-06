@@ -7,11 +7,27 @@ using UnityEngine.SceneManagement;
 namespace MaliGo.PlayerIdentity
 {
     /// <summary>
-    /// Runtime wiring for identity systems when scenes have not yet been updated in the Editor.
+    /// Runtime wiring of every system into both scenes (DESIGN_SPEC §8 WP9), so the .unity files stay untouched.
+    /// Each step is isolated by <see cref="Step"/> and is idempotent, so wiring the same scene twice is harmless.
     /// </summary>
     [DefaultExecutionOrder(-200)]
     public class MaliGoIdentityRuntimeBootstrap : MonoBehaviour
     {
+        public const string WorldSceneName = "MaliGoWorld";
+        public const string CharacterCreationSceneName = "CharacterCreation";
+
+        // The scene instance wired last and the frame it was wired in: the boot scene can reach WireScene both
+        // directly and through sceneLoaded in the same frame; it is wired once.
+        static int lastWiredHandle;
+        static int lastWiredFrame = -1;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics()
+        {
+            lastWiredHandle = 0;
+            lastWiredFrame = -1;
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void BootstrapAfterSceneLoad()
         {
@@ -24,24 +40,32 @@ namespace MaliGo.PlayerIdentity
             SceneManager.sceneLoaded -= OnSceneLoaded;
             SceneManager.sceneLoaded += OnSceneLoaded;
 
-            WireScene(SceneManager.GetActiveScene().name);
+            WireScene(SceneManager.GetActiveScene());
         }
 
         static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
-            WireScene(scene.name);
+            WireScene(scene);
         }
 
-        static void WireScene(string sceneName)
+        static void WireScene(Scene scene)
         {
-            GameFlowController.EnsurePlayerDataManager();
-            MaliGo.UI.EventSystemUtility.EnsureEventSystem();
+            if (scene.handle == lastWiredHandle && Time.frameCount == lastWiredFrame)
+            {
+                return;
+            }
 
-            if (sceneName == "MaliGoWorld")
+            lastWiredHandle = scene.handle;
+            lastWiredFrame = Time.frameCount;
+
+            Step("player data", GameFlowController.EnsurePlayerDataManager);
+            Step("event system", () => MaliGo.UI.EventSystemUtility.EnsureEventSystem());
+
+            if (scene.name == WorldSceneName)
             {
                 WireWorldScene();
             }
-            else if (sceneName == "CharacterCreation")
+            else if (scene.name == CharacterCreationSceneName)
             {
                 WireCharacterCreationScene();
             }
@@ -49,15 +73,34 @@ namespace MaliGo.PlayerIdentity
 
         static void WireWorldScene()
         {
-            // Ordered by how badly the player is stranded without it, and each step isolated:
-            // these all ran as one unguarded sequence before, so a throw anywhere above the
-            // mobile controls left the tester with a world they could look at but not move in.
+            // Order (DESIGN_SPEC §8 WP9). Each step is isolated: a throw in one never strands the player in a world
+            // they can look at but not move in.
+            Step("app lifecycle", MaliGo.App.AppLifecycle.Apply);
+
+            Step("ui router", MaliGo.UI.Kit.UiModal.EnsureRouter);
+
+            // The scene's old HUD canvas is replaced by HudView (§7.4).
+            Step("hide scene HUD", () =>
+            {
+                GameObject sceneHud = GameObject.Find("MaliGo_Canvas");
+                if (sceneHud != null)
+                {
+                    sceneHud.SetActive(false);
+                }
+            });
+
             Step("player spawner", () =>
             {
                 if (Object.FindFirstObjectByType<PlayerCharacterSpawner>() == null)
                 {
                     EnsureSystemsObject().AddComponent<PlayerCharacterSpawner>();
                 }
+            });
+
+            Step("interaction", () =>
+            {
+                MaliGo.World.InteractionArbiter.Ensure(EnsureSystemsObject());
+                MaliGo.UI.WorldPromptView.Ensure();
             });
 
             Step("mobile controls", () =>
@@ -76,14 +119,7 @@ namespace MaliGo.PlayerIdentity
                 }
             });
 
-            Step("HUD", () =>
-            {
-                var canvas = GameObject.Find("MaliGo_Canvas");
-                if (canvas != null && canvas.GetComponent<HUDController>() == null)
-                {
-                    canvas.AddComponent<HUDController>();
-                }
-            });
+            Step("HUD", () => MaliGo.UI.HudView.Ensure());
 
             Step("scenarios", () =>
             {
@@ -92,6 +128,54 @@ namespace MaliGo.PlayerIdentity
             });
 
             Step("world locations", MaliGo.World.WorldLocationWiring.EnsureLocations);
+
+            Step("day flow", () => MaliGo.World.DayFlowController.Ensure());
+
+            Step("pause", () => MaliGo.UI.PauseMenuView.Ensure());
+
+            Step("audio", EnsureAudio);
+
+            Step("first run", () =>
+            {
+                if (MaliGo.Core.MaliGoFeatures.FirstRunGuide && !MaliGo.Settings.GameSettings.FirstRunDone)
+                {
+                    MaliGo.UI.FirstRunGuide.Ensure();
+                }
+            });
+        }
+
+        static void WireCharacterCreationScene()
+        {
+            Step("app lifecycle", MaliGo.App.AppLifecycle.Apply);
+
+            Step("ui router", MaliGo.UI.Kit.UiModal.EnsureRouter);
+
+            Step("audio", EnsureAudio);
+
+            Step("character creation", () =>
+            {
+                // A returning player with a valid save should never see character creation again -
+                // without this, CharacterCreation as the boot scene would force it on every launch.
+                if (PlayerDataManager.Instance != null && PlayerDataManager.Instance.IsCharacterCreated)
+                {
+                    GameFlowController.LoadWorldScene();
+                    return;
+                }
+
+                if (Object.FindFirstObjectByType<CharacterCreationUI>() == null)
+                {
+                    var bootstrap = new GameObject("CharacterCreationBootstrap");
+                    bootstrap.AddComponent<CharacterCreationUI>();
+                }
+            });
+        }
+
+        static void EnsureAudio()
+        {
+            if (MaliGo.Core.MaliGoFeatures.Audio)
+            {
+                MaliGo.Sound.AudioManager.Ensure();
+            }
         }
 
         static GameObject EnsureSystemsObject()
@@ -112,24 +196,7 @@ namespace MaliGo.PlayerIdentity
             }
             catch (System.Exception ex)
             {
-                Debug.LogError($"[MaliGoBootstrap] World wiring step '{label}' failed, continuing with the rest: {ex}");
-            }
-        }
-
-        static void WireCharacterCreationScene()
-        {
-            // A returning player with a valid save should never see character creation again -
-            // without this, CharacterCreation as the boot scene would force it on every launch.
-            if (PlayerDataManager.Instance != null && PlayerDataManager.Instance.IsCharacterCreated)
-            {
-                GameFlowController.LoadWorldScene();
-                return;
-            }
-
-            if (Object.FindFirstObjectByType<CharacterCreationUI>() == null)
-            {
-                var bootstrap = new GameObject("CharacterCreationBootstrap");
-                bootstrap.AddComponent<CharacterCreationUI>();
+                Debug.LogError($"[MaliGoBootstrap] Wiring step '{label}' failed, continuing with the rest: {ex}");
             }
         }
     }

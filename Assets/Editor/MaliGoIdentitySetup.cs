@@ -40,7 +40,6 @@ public static class MaliGoIdentitySetup
 
         EnsurePlayerDataManagerInScene();
         EnsureGameFlowController();
-        EnsureHUDController();
         EnsurePlayerCharacterSpawner();
 
         EditorSceneManager.MarkSceneDirty(scene);
@@ -76,21 +75,6 @@ public static class MaliGoIdentitySetup
         if (go.GetComponent<GameFlowController>() == null)
         {
             go.AddComponent<GameFlowController>();
-        }
-    }
-
-    static void EnsureHUDController()
-    {
-        var canvas = GameObject.Find("MaliGo_Canvas");
-        if (canvas == null)
-        {
-            Debug.LogWarning("[MaliGo] MaliGo_Canvas not found in MaliGoWorld. HUDController was not added.");
-            return;
-        }
-
-        if (canvas.GetComponent<HUDController>() == null)
-        {
-            canvas.AddComponent<HUDController>();
         }
     }
 

@@ -18,11 +18,6 @@ namespace MaliGo.Data
         public string status;
         public string category;
 
-        // Retired with the goal pot; kept until WP9 because other code still reads them.
-        public float ProgressNormalized => targetAmount > 0 ? Mathf.Clamp01(currentAmount / targetAmount) : 0f;
-        public float ProgressPercentage => ProgressNormalized * 100f;
-        public float RemainingAmount => Mathf.Max(0, targetAmount - currentAmount);
-
         /// <summary>The "buffer" preset (Emergency buffer, R2 000), nothing in the retired pot.</summary>
         public FinancialGoal()
         {
@@ -51,14 +46,5 @@ namespace MaliGo.Data
 
         /// <summary>What savings still lacks to reach the target (never negative).</summary>
         public float Remaining(float savings) => Mathf.Max(0f, targetAmount - savings);
-
-        public void Deposit(float amount)
-        {
-            currentAmount = Mathf.Min(targetAmount, currentAmount + amount);
-            if (currentAmount >= targetAmount)
-            {
-                status = "Completed";
-            }
-        }
     }
 }

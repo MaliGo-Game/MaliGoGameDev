@@ -390,68 +390,6 @@ public class MaliGoWorldGenerator
         Debug.Log($"[MaliGoWorldGenerator] Added 5 parked vehicles (scale x{VehicleScale}) to MaliGoWorld and saved the scene. Positions are a first pass - nudge in the Editor if anything clips.");
     }
 
-    /// <summary>
-    /// Restyles the HUD_StatusPanel and Goal_Panel already baked into the current scene,
-    /// swapping their flat-colour backgrounds for the Kenney UI Adventure panel art. Purely
-    /// additive/in-place - does not touch the Text hierarchy HUDController binds to, so it's
-    /// safe to run against the existing scene without regenerating anything.
-    /// </summary>
-    [MenuItem("MaliGo/World/Restyle HUD")]
-    public static void RestyleHud()
-    {
-        Scene activeScene = EditorSceneManager.GetActiveScene();
-        if (activeScene.name != "MaliGoWorld")
-        {
-            Debug.LogWarning("[MaliGoWorldGenerator] Open MaliGoWorld.unity before running Restyle HUD.");
-            return;
-        }
-
-        GameObject hudPanel = GameObject.Find("HUD_StatusPanel");
-        GameObject goalPanel = GameObject.Find("Goal_Panel");
-        if (hudPanel == null && goalPanel == null)
-        {
-            Debug.LogWarning("[MaliGoWorldGenerator] Neither HUD_StatusPanel nor Goal_Panel found in the open scene.");
-            return;
-        }
-
-        Sprite panelSprite = MaliGo.UI.KenneyUiSprites.PanelStatus;
-        if (panelSprite == null)
-        {
-            Debug.LogWarning("[MaliGoWorldGenerator] Could not load panel_grey_green - is the UI Adventure pack still in Assets/kenney_ui-pack-adventure?");
-            return;
-        }
-
-        Color statusText = new Color(0.059f, 0.20f, 0.12f);
-
-        RestylePanel(hudPanel, panelSprite, statusText);
-        RestylePanel(goalPanel, panelSprite, statusText);
-
-        EditorSceneManager.MarkSceneDirty(activeScene);
-        EditorSceneManager.SaveScene(activeScene);
-        Debug.Log("[MaliGoWorldGenerator] Restyled HUD panels and saved the scene.");
-    }
-
-    private static void RestylePanel(GameObject panel, Sprite panelSprite, Color textColor)
-    {
-        if (panel == null)
-        {
-            return;
-        }
-
-        Image panelImage = panel.GetComponent<Image>();
-        if (panelImage != null)
-        {
-            panelImage.sprite = panelSprite;
-            panelImage.type = Image.Type.Sliced;
-            panelImage.color = Color.white;
-        }
-
-        foreach (Text text in panel.GetComponentsInChildren<Text>(true))
-        {
-            text.color = textColor;
-        }
-    }
-
     private static void ApplyVehicleScale(GameObject vehiclesRoot)
     {
         foreach (Transform child in vehiclesRoot.transform)
@@ -505,9 +443,7 @@ public class MaliGoWorldGenerator
         Font defaultFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         if (defaultFont == null) defaultFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
 
-        // Kenney UI Adventure's panel_grey_green fill is light blue-grey, so HUD text
-        // needs a dark colour here rather than the cream/sage tuned for the old flat-green panel.
-        Color statusText = new Color(0.059f, 0.20f, 0.12f);
+        Color statusText = cream;
 
         // Top Left Status Panel
         GameObject hudPanel = new GameObject("HUD_StatusPanel");
@@ -519,17 +455,9 @@ public class MaliGoWorldGenerator
         hudRect.anchoredPosition = new Vector2(24, -24);
         hudRect.sizeDelta = new Vector2(300, 170);
 
+        // The scene HUD is hidden at runtime and replaced by HudView (DESIGN_SPEC §7.4); a flat panel is enough.
         Image hudBg = hudPanel.AddComponent<Image>();
-        Sprite hudPanelSprite = MaliGo.UI.KenneyUiSprites.PanelStatus;
-        if (hudPanelSprite != null)
-        {
-            hudBg.sprite = hudPanelSprite;
-            hudBg.type = Image.Type.Sliced;
-        }
-        else
-        {
-            hudBg.color = new Color(mossGreen.r, mossGreen.g, mossGreen.b, 0.92f);
-        }
+        hudBg.color = new Color(mossGreen.r, mossGreen.g, mossGreen.b, 0.92f);
 
         CreateText(hudPanel, "Player: You | Level 1", new Vector2(16, -14), 20, statusText, FontStyle.Bold, defaultFont);
 
@@ -568,16 +496,7 @@ public class MaliGoWorldGenerator
         goalRect.sizeDelta = new Vector2(280, 110);
 
         Image goalBg = goalBox.AddComponent<Image>();
-        Sprite goalPanelSprite = MaliGo.UI.KenneyUiSprites.PanelStatus;
-        if (goalPanelSprite != null)
-        {
-            goalBg.sprite = goalPanelSprite;
-            goalBg.type = Image.Type.Sliced;
-        }
-        else
-        {
-            goalBg.color = new Color(mossGreen.r, mossGreen.g, mossGreen.b, 0.92f);
-        }
+        goalBg.color = new Color(mossGreen.r, mossGreen.g, mossGreen.b, 0.92f);
 
         CreateText(goalBox, "Today's Financial Goal:", new Vector2(16, -16), 18, statusText, FontStyle.Bold, defaultFont);
         CreateText(goalBox, "Goal: Set your daily goal", new Vector2(16, -50), 22, new Color(0.62f, 0.38f, 0.06f), FontStyle.Bold, defaultFont);

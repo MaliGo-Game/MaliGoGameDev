@@ -22,9 +22,8 @@ public static class MaliGoResourceBaker
     public static void BakeAll()
     {
         EnsureFolder(ResourcesRoot);
-        // The Kenney adventure UI sprites are no longer baked (DESIGN_SPEC §7.13, D10): the new UI kit
-        // draws its own surfaces. Assets/Resources/MaliGoUI stays until WP9 removes every KenneyUiSprites
-        // use and deletes the folder.
+        // The Kenney adventure UI sprites are no longer baked or shipped (DESIGN_SPEC §7.13, D10): the new UI
+        // kit draws its own surfaces.
         BakePlayerCharacterCatalog();
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();

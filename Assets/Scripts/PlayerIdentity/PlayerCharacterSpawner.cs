@@ -4,7 +4,8 @@ using UnityEngine;
 namespace MaliGo.PlayerIdentity
 {
     /// <summary>
-    /// Separates Mali from the human player and spawns the PlayerCharacter from PlayerData.
+    /// Separates Mali from the human player (keeping her only as a hidden dialogue host: she is docked in the HUD,
+    /// not in the world) and spawns the PlayerCharacter from PlayerData.
     /// </summary>
     [DefaultExecutionOrder(-150)]
     public class PlayerCharacterSpawner : MonoBehaviour
@@ -24,15 +25,8 @@ namespace MaliGo.PlayerIdentity
         const float ControllerHeight = 0.47f;
         const float ControllerRadius = 0.09f;
 
-        /// <summary>
-        /// Mali's sprite in MaliGoWorld.unity measures 1.68 units tall (twice the 0.83-unit Player_House).
-        /// A companion a little shorter than the 0.48-unit player keeps her in the same world scale.
-        /// </summary>
-        const float MaliTargetHeight = 0.45f;
-
         [SerializeField] PlayerCharacterCatalog catalog;
         [SerializeField] GameObject playerCharacterPrefab;
-        [SerializeField] Vector3 maliOffsetFromPlayer = new Vector3(0.32f, 0f, -0.22f);
 
         public PlayerCharacterCatalog Catalog => catalog;
 
@@ -56,22 +50,24 @@ namespace MaliGo.PlayerIdentity
 
         public void InitializeWorldCharacters()
         {
-            GameObject mali = SeparateMaliFromPlayer();
+            SeparateMaliFromPlayer();
             GameObject player = EnsurePlayerCharacter();
             RetargetCamera(player != null ? player.transform : null);
-
-            if (mali != null && player != null)
-            {
-                PositionMaliNearPlayer(mali, player.transform);
-            }
         }
 
+        /// <summary>
+        /// Turns the scene's "Mali" object (or the legacy "Player_Sam") into Mali's hidden host: it keeps the name
+        /// "Mali" and her dialogue components, so everything that looks her up (<c>GameObject.Find("Mali")</c>,
+        /// <c>FindFirstObjectByType&lt;MaliDialogueController&gt;()</c>) still works, but she no longer stands or
+        /// walks in the world. She is docked in the HUD above the Talk button instead (<c>MobileControlsUI</c>).
+        /// With no Mali in the scene an empty host is created, so her lines are never lost.
+        /// </summary>
         public static GameObject SeparateMaliFromPlayer()
         {
             GameObject maliObject = GameObject.Find(MaliObjectName) ?? GameObject.Find(MaliLegacyObjectName);
             if (maliObject == null)
             {
-                return null;
+                maliObject = new GameObject(MaliObjectName);
             }
 
             if (maliObject.name != MaliObjectName)
@@ -93,23 +89,8 @@ namespace MaliGo.PlayerIdentity
                 Destroy(identityBridge);
             }
 
-            if (maliObject.GetComponent<MaliNpcController>() == null)
-            {
-                maliObject.AddComponent<MaliNpcController>();
-            }
-
             EnsureMaliCompanionComponents(maliObject);
-            FitMaliToWorld(maliObject);
-
-            CharacterController controller = maliObject.GetComponent<CharacterController>();
-            if (controller == null)
-            {
-                controller = maliObject.AddComponent<CharacterController>();
-                controller.height = 1.2f;
-                controller.radius = 0.3f;
-                controller.center = new Vector3(0f, 0.6f, 0f);
-            }
-
+            HideMaliInWorld(maliObject);
             return maliObject;
         }
 
@@ -144,7 +125,9 @@ namespace MaliGo.PlayerIdentity
             }
 
             GameObject legacyMali = GameObject.Find(MaliObjectName) ?? GameObject.Find(MaliLegacyObjectName);
-            if (legacyMali != null)
+            // Only a Mali that came with the scene marks a spot; an empty host made by SeparateMaliFromPlayer sits
+            // at the origin and has no renderers.
+            if (legacyMali != null && legacyMali.GetComponentInChildren<Renderer>(true) != null)
             {
                 return legacyMali.transform.position;
             }
@@ -267,43 +250,29 @@ namespace MaliGo.PlayerIdentity
             }
         }
 
-        void PositionMaliNearPlayer(GameObject mali, Transform playerTransform)
-        {
-            Vector3 target = playerTransform.position + maliOffsetFromPlayer;
-            target.y = playerTransform.position.y;
-            mali.transform.position = target;
-
-            MaliNpcController maliNpc = mali.GetComponent<MaliNpcController>();
-            maliNpc?.RefreshPlayerReference();
-            maliNpc?.SetFollowPlayer(true);
-        }
-
         /// <summary>
-        /// Scales Mali's sprite to <see cref="MaliTargetHeight"/> and stands her feet on her own ground
-        /// point, so she reads as a companion beside the player rather than a giant above the houses.
-        /// Measured from the renderer each time, so it is idempotent if the world is wired twice.
+        /// Removes Mali's world presence while keeping the object (and its components) alive: every renderer is
+        /// switched off, colliders and her CharacterController stop blocking the player, and her NPC controller
+        /// stops following (it stays attached, disabled, because the dialogue controller still sets its TALK state).
         /// </summary>
-        static void FitMaliToWorld(GameObject maliObject)
+        static void HideMaliInWorld(GameObject maliObject)
         {
-            SpriteRenderer sprite = maliObject.GetComponentInChildren<SpriteRenderer>(true);
-            if (sprite == null || sprite.sprite == null)
+            foreach (Renderer renderer in maliObject.GetComponentsInChildren<Renderer>(true))
             {
-                return;
+                renderer.enabled = false;
             }
 
-            float height = sprite.bounds.size.y;
-            if (height <= 0.001f)
+            foreach (Collider collider in maliObject.GetComponentsInChildren<Collider>(true))
             {
-                return;
+                collider.enabled = false; // CharacterController is a Collider
             }
 
-            if (Mathf.Abs(height - MaliTargetHeight) > 0.01f)
+            MaliNpcController npc = maliObject.GetComponent<MaliNpcController>();
+            if (npc != null)
             {
-                sprite.transform.localScale *= MaliTargetHeight / height;
+                npc.SetFollowPlayer(false);
+                npc.enabled = false;
             }
-
-            float lift = maliObject.transform.position.y - sprite.bounds.min.y;
-            sprite.transform.position += new Vector3(0f, lift, 0f);
         }
 
         static void EnsureMaliCompanionComponents(GameObject maliObject)

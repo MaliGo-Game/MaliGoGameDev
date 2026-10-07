@@ -21,6 +21,13 @@ namespace MaliGo.Characters
     /// Compact box: Body 40, at most 2 lines, no scrim, never blocks input; a tap on it dismisses it and it hides
     /// itself after typing ends + clamp(1.5 s + 0.05 s x characters, 3 s, 8 s). Not a modal.
     ///
+    /// Docked to Mali: while the HUD shows Mali docked above the Talk button (the <c>controls.mali</c> anchor,
+    /// <c>MobileControlsUI</c>), both boxes speak from her. They sit to the left of the dock with a speech tail on
+    /// their right edge pointing at her, and drop their own portrait (the docked figure is the speaker). The
+    /// blocking box hides the controls (it is a modal), so it draws a still copy of Mali exactly where the dock is.
+    /// The compact box is raised beside her, clear of the joystick and the Talk button. Without the anchor
+    /// (no controls in the scene) the boxes keep their centred layout with the portrait inside.
+    ///
     /// The controller decides what is shown when (MaliDialogueController); this view only draws one line at a
     /// time and calls back when it has been closed. All timing is unscaled.
     /// </summary>
@@ -69,6 +76,20 @@ namespace MaliGo.Characters
         const float CompactTextBottom = 16f;
         const int CompactMaxLines = 2;
 
+        // Docked to Mali in the HUD.
+        const string DockAnchorId = "controls.mali";
+        const float DockedSideMargin = 48f;
+        const float DockedBlockingMinWidth = 900f;
+        const float DockedCompactMinWidth = 760f;
+        const float DockedCompactLeftReserve = 360f; // the joystick's corner
+        const float DockedTextLeft = 48f;
+        const float DockedCompactTextLeft = 32f;
+        const float DockClearance = 24f;   // keeps the box clear of the Talk button's round end under Mali
+        const float TailSize = 44f;
+        const float TailGap = 30f;          // ~ how far the tail pokes out of the box
+        const float TailInset = 44f;        // the tail stays this far from the box's top and bottom corners
+        const float CompactLift = 0.6f;     // fraction of the compact box below Mali's centre
+
         const float PageLockout = 0.15f;
         const string HiddenOpen = "<color=#00000000>";
         const string HiddenClose = "</color>";
@@ -98,6 +119,22 @@ namespace MaliGo.Characters
         RectTransform compactBox;
         CanvasGroup compactGroup;
         Text compactText;
+
+        Image blockingPortrait;
+        RectTransform blockingTextArea;
+        RectTransform blockingTail;
+        Image compactPortrait;
+        RectTransform compactTextArea;
+        RectTransform compactTag;
+        RectTransform compactTail;
+        RectTransform speaker;
+
+        static readonly Vector3[] DockCorners = new Vector3[4];
+
+        bool docked;
+        bool dockLayoutApplied;
+        bool lastAppliedDocked;
+        Rect dockRect;
 
         Mode mode = Mode.None;
         string[] pages = Array.Empty<string>();
@@ -486,33 +523,156 @@ namespace MaliGo.Characters
             return width > 1f ? width : UiTheme.ReferenceWidth;
         }
 
-        float BlockingWidth() => Mathf.Min(BlockingMaxWidth, SafeWidth() - BlockingSideMargin);
+        float SafeHeight()
+        {
+            float height = safeRoot != null ? safeRoot.rect.height : 0f;
+            return height > 1f ? height : UiTheme.ReferenceHeight;
+        }
 
-        float CompactWidth() => Mathf.Clamp(SafeWidth() - CompactSideSpace, CompactMinWidth, CompactMaxWidth);
+        /// <summary>Right edge of a docked box, in safe-area units from the centre (the tail pokes out past it).</summary>
+        float DockedRight() => dockRect.xMin - DockClearance - TailGap;
 
-        float BlockingTextWidth() => BlockingWidth() - BlockingTextLeft - BlockingTextRight;
+        /// <summary>Mali's centre height above the safe area's bottom edge.</summary>
+        float DockCentreFromBottom() => dockRect.center.y + SafeHeight() * 0.5f;
 
-        float CompactTextWidth() => CompactWidth() - CompactTextLeft - CompactTextRight;
+        float BlockingWidth()
+        {
+            float centred = Mathf.Min(BlockingMaxWidth, SafeWidth() - BlockingSideMargin);
+            if (!docked)
+            {
+                return centred;
+            }
+
+            float available = DockedRight() - (-SafeWidth() * 0.5f + DockedSideMargin);
+            return Mathf.Clamp(available, Mathf.Min(DockedBlockingMinWidth, centred), centred);
+        }
+
+        float CompactWidth()
+        {
+            float centred = Mathf.Clamp(SafeWidth() - CompactSideSpace, CompactMinWidth, CompactMaxWidth);
+            if (!docked)
+            {
+                return centred;
+            }
+
+            float available = DockedRight() - (-SafeWidth() * 0.5f + DockedCompactLeftReserve);
+            return Mathf.Clamp(available, DockedCompactMinWidth, CompactMaxWidth);
+        }
+
+        float BlockingTextWidth() => BlockingWidth() - (docked ? DockedTextLeft : BlockingTextLeft) - BlockingTextRight;
+
+        float CompactTextWidth() => CompactWidth() - (docked ? DockedCompactTextLeft : CompactTextLeft) - CompactTextRight;
 
         void Relayout(bool force)
         {
             float width = SafeWidth();
-            if (!force && Mathf.Abs(width - lastSafeWidth) < 0.5f)
+            bool wasDocked = docked;
+            Rect lastDock = dockRect;
+            docked = TryGetDock(out dockRect);
+            bool dockMoved = docked != wasDocked
+                             || (docked && (Vector2.SqrMagnitude(dockRect.min - lastDock.min) > 0.25f
+                                            || Vector2.SqrMagnitude(dockRect.size - lastDock.size) > 0.25f));
+            if (!force && !dockMoved && Mathf.Abs(width - lastSafeWidth) < 0.5f)
             {
                 return;
             }
 
             lastSafeWidth = width;
+            ApplyDockLayout();
+
             if (blockingBox != null)
             {
-                blockingBox.sizeDelta = new Vector2(BlockingWidth(), BlockingHeight);
+                float boxWidth = BlockingWidth();
+                blockingBox.sizeDelta = new Vector2(boxWidth, BlockingHeight);
+                blockingBox.anchoredPosition = new Vector2(docked ? DockedRight() - boxWidth * 0.5f : 0f, BoxBottom);
+                PlaceTail(blockingTail, BoxBottom, BlockingHeight);
+                if (docked)
+                {
+                    speaker.anchoredPosition = dockRect.center;
+                    speaker.sizeDelta = dockRect.size;
+                }
             }
 
             if (compactBox != null)
             {
-                compactBox.sizeDelta = new Vector2(CompactWidth(), CompactHeight);
+                float boxWidth = CompactWidth();
+                float bottom = docked ? Mathf.Max(BoxBottom, DockCentreFromBottom() - CompactHeight * CompactLift) : BoxBottom;
+                compactBox.sizeDelta = new Vector2(boxWidth, CompactHeight);
+                compactBox.anchoredPosition = new Vector2(docked ? DockedRight() - boxWidth * 0.5f : 0f, bottom);
+                PlaceTail(compactTail, bottom, CompactHeight);
             }
         }
+
+        /// <summary>The docked Mali's rect in safe-area units (centre origin), when the HUD shows her.</summary>
+        bool TryGetDock(out Rect rect)
+        {
+            rect = default;
+            if (safeRoot == null || !UiAnchors.TryGet(DockAnchorId, out RectTransform dock) || !dock.gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+
+            // Both canvases are screen-space overlay, so world corners are screen pixels.
+            Vector3[] corners = DockCorners;
+            dock.GetWorldCorners(corners);
+            Vector2 min = new Vector2(float.MaxValue, float.MaxValue);
+            Vector2 max = new Vector2(float.MinValue, float.MinValue);
+            foreach (Vector3 corner in corners)
+            {
+                if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(safeRoot, corner, null, out Vector2 local))
+                {
+                    return false;
+                }
+
+                min = Vector2.Min(min, local);
+                max = Vector2.Max(max, local);
+            }
+
+            rect = Rect.MinMaxRect(min.x, min.y, max.x, max.y);
+            return rect.width > 1f && rect.height > 1f;
+        }
+
+        /// <summary>Switches portraits, text insets, tails and the speaker copy between the docked and centred
+        /// layouts (only when that changes).</summary>
+        void ApplyDockLayout()
+        {
+            if (blockingBox == null || compactBox == null || (dockLayoutApplied && docked == lastAppliedDocked))
+            {
+                return;
+            }
+
+            dockLayoutApplied = true;
+            lastAppliedDocked = docked;
+
+            blockingPortrait.gameObject.SetActive(!docked);
+            compactPortrait.gameObject.SetActive(!docked);
+            blockingTail.gameObject.SetActive(docked);
+            compactTail.gameObject.SetActive(docked);
+            speaker.gameObject.SetActive(docked);
+
+            float blockingLeft = docked ? DockedTextLeft : BlockingTextLeft;
+            blockingTextArea.offsetMin = new Vector2(blockingLeft, BlockingTextBottom);
+            blockingTag.anchoredPosition = new Vector2(blockingLeft, TagY);
+            chipRow.anchoredPosition = new Vector2(blockingLeft + blockingTag.sizeDelta.x + ChipPadding, chipRow.anchoredPosition.y);
+
+            float compactLeft = docked ? DockedCompactTextLeft : CompactTextLeft;
+            compactTextArea.offsetMin = new Vector2(compactLeft, CompactTextBottom);
+            compactTag.anchoredPosition = new Vector2(compactLeft, CompactTagY);
+        }
+
+        /// <summary>Puts a tail on the box's right edge at Mali's height, kept off the box's corners.</summary>
+        void PlaceTail(RectTransform tail, float boxBottom, float boxHeight)
+        {
+            if (tail == null || !docked)
+            {
+                return;
+            }
+
+            float y = Mathf.Clamp(DockCentreFromBottom() - boxBottom, TailInset, boxHeight - TailInset);
+            tail.anchoredPosition = new Vector2(0f, y);
+        }
+
+        float TagLeft() => docked ? DockedTextLeft : TagX;
 
         // ================================================================ building
 
@@ -553,6 +713,9 @@ namespace MaliGo.Characters
             blockingGroup = blockingBox.gameObject.AddComponent<CanvasGroup>();
             blockingGroup.blocksRaycasts = false; // taps go to the catcher behind
 
+            // Speech tail toward the docked Mali: a diamond half under the box, so only a point shows.
+            blockingTail = BuildTail(blockingBox);
+
             // Gold top edge: the gold panel shows 6 u above the warm panel.
             Image edge = UiKit.Panel(blockingBox, "GoldEdge", UiTheme.Gold, UiTheme.RadiusSheet, UiTheme.ShadowSheet);
             edge.raycastTarget = false;
@@ -561,6 +724,7 @@ namespace MaliGo.Characters
             fill.rectTransform.offsetMax = new Vector2(0f, -GoldEdge);
 
             Image portrait = UiKit.SpriteImage(blockingBox, "Portrait", UiKit.MaliPortrait, BlockingPortrait, Color.white);
+            blockingPortrait = portrait;
             RectTransform portraitRect = portrait.rectTransform;
             portraitRect.anchorMin = portraitRect.anchorMax = new Vector2(0f, 0f);
             portraitRect.pivot = new Vector2(0f, 0f);
@@ -575,6 +739,7 @@ namespace MaliGo.Characters
             chipRow.sizeDelta = new Vector2(0f, ChipHeight);
 
             RectTransform textArea = UiKit.Rect(blockingBox, "TextArea");
+            blockingTextArea = textArea;
             textArea.offsetMin = new Vector2(BlockingTextLeft, BlockingTextBottom);
             textArea.offsetMax = new Vector2(-BlockingTextRight, -BlockingTextTop);
             blockingText = UiKit.Label(textArea, "Text", "", UiTheme.Dialogue, UiTheme.TextPrimary);
@@ -587,6 +752,11 @@ namespace MaliGo.Characters
             cueRest = new Vector2(-CueRight, CueBottom);
             cueRect.anchoredPosition = cueRest;
             cueRect.gameObject.SetActive(false);
+
+            // The docked Mali, drawn over the scrim where the HUD dock is (the controls hide behind this modal).
+            Image speakerImage = UiKit.SpriteImage(root, "Speaker", UiKit.MaliPortrait, 132f, Color.white);
+            speaker = speakerImage.rectTransform;
+            speaker.gameObject.SetActive(false);
         }
 
         void BuildCompact()
@@ -601,23 +771,47 @@ namespace MaliGo.Characters
             compactBox.sizeDelta = new Vector2(CompactMinWidth, CompactHeight);
             compactGroup = compactBox.gameObject.AddComponent<CanvasGroup>();
 
+            compactTail = BuildTail(compactBox);
+
             Image fill = UiKit.Panel(compactBox, "Fill", UiTheme.Warm, UiTheme.RadiusSheet, UiTheme.ShadowCard);
             fill.raycastTarget = true; // a tap on the box dismisses it; nothing else is blocked
             fill.gameObject.AddComponent<TapCatcher>().Tapped = Tap;
 
             Image portrait = UiKit.SpriteImage(compactBox, "Portrait", UiKit.MaliPortrait, CompactPortrait, Color.white);
+            compactPortrait = portrait;
             RectTransform portraitRect = portrait.rectTransform;
             portraitRect.anchorMin = portraitRect.anchorMax = new Vector2(0f, 0.5f);
             portraitRect.pivot = new Vector2(0f, 0.5f);
             portraitRect.anchoredPosition = new Vector2(CompactPortraitLeft, 0f);
 
-            BuildTag(compactBox, CompactTagX, CompactTagY, CompactTagHeight);
+            compactTag = BuildTag(compactBox, CompactTagX, CompactTagY, CompactTagHeight);
 
             RectTransform textArea = UiKit.Rect(compactBox, "TextArea");
+            compactTextArea = textArea;
             textArea.offsetMin = new Vector2(CompactTextLeft, CompactTextBottom);
             textArea.offsetMax = new Vector2(-CompactTextRight, -CompactTextTop);
             compactText = UiKit.Label(textArea, "Text", "", UiTheme.Body, UiTheme.TextPrimary);
             compactText.horizontalOverflow = HorizontalWrapMode.Overflow; // pre-broken by UiTextLayout.Wrap
+        }
+
+        /// <summary>
+        /// The speech tail: a Warm square turned 45 degrees, centred on the box's right edge and drawn first, so the
+        /// box covers its inner half and a point shows toward the docked Mali. Hidden until docked.
+        /// </summary>
+        static RectTransform BuildTail(RectTransform box)
+        {
+            RectTransform tail = UiKit.Rect(box, "Tail");
+            tail.anchorMin = tail.anchorMax = new Vector2(1f, 0f);
+            tail.pivot = new Vector2(0.5f, 0.5f);
+            tail.sizeDelta = new Vector2(TailSize, TailSize);
+            tail.localRotation = Quaternion.Euler(0f, 0f, 45f);
+            Image image = tail.gameObject.AddComponent<Image>();
+            image.sprite = UiKit.White;
+            image.color = UiTheme.Warm;
+            image.raycastTarget = false;
+            tail.SetAsFirstSibling();
+            tail.gameObject.SetActive(false);
+            return tail;
         }
 
         /// <summary>The gold "Mali" name tag: a pill with Label 36 Black ink, padding 24.</summary>
@@ -654,7 +848,7 @@ namespace MaliGo.Characters
                 return;
             }
 
-            chipRow.anchoredPosition = new Vector2(TagX + blockingTag.sizeDelta.x + ChipPadding, chipRow.anchoredPosition.y);
+            chipRow.anchoredPosition = new Vector2(TagLeft() + blockingTag.sizeDelta.x + ChipPadding, chipRow.anchoredPosition.y);
             float limit = BlockingWidth() - chipRow.anchoredPosition.x - BlockingTextRight;
             float x = 0f;
             foreach (string chip in chips)

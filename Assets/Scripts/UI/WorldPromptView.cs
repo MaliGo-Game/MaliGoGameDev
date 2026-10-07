@@ -8,7 +8,7 @@ namespace MaliGo.UI
     /// <summary>
     /// The one world prompt (DESIGN_SPEC §5.4.2, sort 10): a paper pill at the bottom centre, its bottom edge 330 u
     /// above the safe bottom, 120 u tall (hit rect 160), 480-1000 u wide. It shows the arbiter's current
-    /// interactable: icon (Mali's portrait for Mali), text, and a "Tap" / "E" chip; greyed (muted text, no chip)
+    /// interactable: icon (Mali's portrait for the "mali" icon), text, and a "Tap" / "E" chip; greyed (muted text, no chip)
     /// when the interactable is disabled. Tapping it asks the arbiter to interact (which calls
     /// <c>OnDisabledTap</c> on a greyed one). Text, icon and state are re-read every frame and only written when
     /// they change. Not a modal; the arbiter clears <c>Current</c> while a modal is open.

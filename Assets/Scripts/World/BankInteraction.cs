@@ -31,6 +31,8 @@ namespace MaliGo.World
             return panel == null || !panel.IsOpen;
         }
 
+        public override bool IsBuildingEntrance => true;
+
         protected override void OnInteract()
         {
             var actions = new List<ActionPanelUI.ActionButton>();

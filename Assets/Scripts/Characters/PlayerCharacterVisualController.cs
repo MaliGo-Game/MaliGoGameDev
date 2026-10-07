@@ -55,7 +55,9 @@ namespace MaliGo.Characters
                 }
             }
 
-            animator.speed = isMoving ? runAnimSpeed : 1f;
+            // The run clip is the only moving state, so its playback follows the ground speed: at the 1.0 u/s walk
+            // it plays at ~0.8x so the feet neither skate nor spin in place (MovementMath.RunPlaybackRate).
+            animator.speed = isMoving ? runAnimSpeed * MaliGo.Core.MovementMath.RunPlaybackRate(speed) : 1f;
         }
 
         public void SetSkinMaterial(Material material)

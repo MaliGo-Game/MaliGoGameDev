@@ -68,7 +68,9 @@ namespace MaliGo.UI
             texture = new RenderTexture(TextureSize, TextureSize, 24, RenderTextureFormat.ARGB32)
             {
                 name = "LookPreview_RT",
-                antiAliasing = 2
+                // One sample, and the camera below asks for no MSAA: on device the pipeline requested
+                // 2 samples against a 1-sample attachment and logged an error every frame.
+                antiAliasing = 1
             };
             texture.Create();
 
@@ -82,25 +84,9 @@ namespace MaliGo.UI
             model.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
             model.transform.localScale = Vector3.one * ModelScale;
 
-            Animator animator = model.GetComponentInChildren<Animator>();
-            if (animator == null)
-            {
-                animator = model.AddComponent<Animator>();
-            }
-
-            if (catalog.animatorController != null)
-            {
-                animator.runtimeAnimatorController = catalog.animatorController;
-            }
-
-            if (animator.avatar == null)
-            {
-                Animator prefabAnimator = catalog.characterModelPrefab.GetComponentInChildren<Animator>();
-                if (prefabAnimator != null && prefabAnimator.avatar != null)
-                {
-                    animator.avatar = prefabAnimator.avatar;
-                }
-            }
+            // On the armature, as in the world (see CharacterRig): otherwise the idle clip resets the
+            // model's scale to 100 and the preview shows nothing recognisable.
+            Animator animator = MaliGo.Characters.CharacterRig.AttachAnimator(model, catalog.animatorController);
 
             animator.updateMode = AnimatorUpdateMode.UnscaledTime;
             renderers = model.GetComponentsInChildren<Renderer>(true);
@@ -108,6 +94,7 @@ namespace MaliGo.UI
 
             var cameraObject = new GameObject("LookPreview_Camera");
             previewCamera = cameraObject.AddComponent<Camera>();
+            previewCamera.allowMSAA = false;
             previewCamera.clearFlags = CameraClearFlags.SolidColor;
             previewCamera.backgroundColor = UiTheme.Tint;
             previewCamera.fieldOfView = FieldOfView;

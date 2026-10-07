@@ -20,6 +20,17 @@ public class MaliGoCameraController : MonoBehaviour
     public Vector3 minBounds = new Vector3(-35f, 0f, -35f);
     public Vector3 maxBounds = new Vector3(35f, 35f, 35f);
 
+    /// <summary>
+    /// MaliGo is a 2.5D isometric game. The world camera in MaliGoWorld.unity had been switched to
+    /// perspective (60 degrees, about 14 units out), so the town looked like a small aerial shot. The
+    /// world is built at about 0.27 units per metre (player 0.48 u, houses 0.8-1.3 u), so an orthographic
+    /// view a few units tall frames the player and the street around them. Enforced here rather than in
+    /// the scene, so the scene file never has to be edited.
+    /// </summary>
+    const float OrthographicSize = 1.7f;
+    const float OrthographicMinZoom = 1.2f;
+    const float OrthographicMaxZoom = 3.2f;
+
     private Camera mainCamera;
     private Vector3 currentVelocity = Vector3.zero;
 
@@ -27,6 +38,14 @@ public class MaliGoCameraController : MonoBehaviour
     {
         mainCamera = GetComponent<Camera>();
         transform.rotation = Quaternion.Euler(isometricRotation);
+
+        if (mainCamera != null)
+        {
+            mainCamera.orthographic = true;
+            mainCamera.orthographicSize = OrthographicSize;
+            minZoom = OrthographicMinZoom;
+            maxZoom = OrthographicMaxZoom;
+        }
     }
 
     void Start()

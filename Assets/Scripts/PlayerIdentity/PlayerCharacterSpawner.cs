@@ -24,6 +24,12 @@ namespace MaliGo.PlayerIdentity
         const float ControllerHeight = 0.47f;
         const float ControllerRadius = 0.09f;
 
+        /// <summary>
+        /// Mali's sprite in MaliGoWorld.unity measures 1.68 units tall (twice the 0.83-unit Player_House).
+        /// A companion a little shorter than the 0.48-unit player keeps her in the same world scale.
+        /// </summary>
+        const float MaliTargetHeight = 0.45f;
+
         [SerializeField] PlayerCharacterCatalog catalog;
         [SerializeField] GameObject playerCharacterPrefab;
         [SerializeField] Vector3 maliOffsetFromPlayer = new Vector3(0.32f, 0f, -0.22f);
@@ -93,6 +99,7 @@ namespace MaliGo.PlayerIdentity
             }
 
             EnsureMaliCompanionComponents(maliObject);
+            FitMaliToWorld(maliObject);
 
             CharacterController controller = maliObject.GetComponent<CharacterController>();
             if (controller == null)
@@ -198,25 +205,9 @@ namespace MaliGo.PlayerIdentity
             modelInstance.transform.localRotation = Quaternion.identity;
             modelInstance.transform.localScale = Vector3.one * CharacterModelScale;
 
-            Animator animator = modelInstance.GetComponentInChildren<Animator>();
-            if (animator == null)
-            {
-                animator = modelInstance.AddComponent<Animator>();
-            }
-
-            if (catalog.animatorController != null)
-            {
-                animator.runtimeAnimatorController = catalog.animatorController;
-            }
-
-            if (animator.avatar == null)
-            {
-                Animator modelAnimator = catalog.characterModelPrefab.GetComponentInChildren<Animator>();
-                if (modelAnimator != null && modelAnimator.avatar != null)
-                {
-                    animator.avatar = modelAnimator.avatar;
-                }
-            }
+            // On the armature, not the model root: the clips' root curves would otherwise replace the 0.12
+            // scale above with 100 (see CharacterRig).
+            CharacterRig.AttachAnimator(modelInstance, catalog.animatorController);
 
             PlayerCharacterVisualController visualController = visualRoot.GetComponent<PlayerCharacterVisualController>();
             if (visualController == null)
@@ -285,6 +276,34 @@ namespace MaliGo.PlayerIdentity
             MaliNpcController maliNpc = mali.GetComponent<MaliNpcController>();
             maliNpc?.RefreshPlayerReference();
             maliNpc?.SetFollowPlayer(true);
+        }
+
+        /// <summary>
+        /// Scales Mali's sprite to <see cref="MaliTargetHeight"/> and stands her feet on her own ground
+        /// point, so she reads as a companion beside the player rather than a giant above the houses.
+        /// Measured from the renderer each time, so it is idempotent if the world is wired twice.
+        /// </summary>
+        static void FitMaliToWorld(GameObject maliObject)
+        {
+            SpriteRenderer sprite = maliObject.GetComponentInChildren<SpriteRenderer>(true);
+            if (sprite == null || sprite.sprite == null)
+            {
+                return;
+            }
+
+            float height = sprite.bounds.size.y;
+            if (height <= 0.001f)
+            {
+                return;
+            }
+
+            if (Mathf.Abs(height - MaliTargetHeight) > 0.01f)
+            {
+                sprite.transform.localScale *= MaliTargetHeight / height;
+            }
+
+            float lift = maliObject.transform.position.y - sprite.bounds.min.y;
+            sprite.transform.position += new Vector3(0f, lift, 0f);
         }
 
         static void EnsureMaliCompanionComponents(GameObject maliObject)

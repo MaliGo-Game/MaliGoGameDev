@@ -12,12 +12,28 @@ using UnityEngine;
 /// </summary>
 public static class MaliGoBuildPipeline
 {
-    const string ApkOutputPath = "Builds/Android/MaliGo-Beta.apk";
+    const string BetaApkPath = "Builds/Android/MaliGo-Beta.apk";
+    const string DiagnosticApkPath = "Builds/Android/MaliGo-Diagnostic.apk";
     const string CharacterCreationScenePath = "Assets/Scenes/CharacterCreation.unity";
     const string WorldScenePath = "Assets/Scenes/MaliGoWorld.unity";
 
     [MenuItem("MaliGo/Build/Android Beta APK")]
     public static void BuildAndroidBeta()
+    {
+        Build(BetaApkPath, BuildOptions.None);
+    }
+
+    /// <summary>
+    /// A development build (debuggable, so adb can dump the live call stack of a hang) for chasing a crash on a
+    /// test phone. Never send it to testers: it is slower and is not versioned.
+    /// </summary>
+    [MenuItem("MaliGo/Build/Android Diagnostic APK (development)")]
+    public static void BuildAndroidDiagnostic()
+    {
+        Build(DiagnosticApkPath, BuildOptions.Development);
+    }
+
+    static void Build(string ApkOutputPath, BuildOptions buildOptions)
     {
         MaliGoAndroidSetup.Configure();
         MaliGoResourceBaker.BakeAll();
@@ -49,7 +65,7 @@ public static class MaliGoBuildPipeline
             scenes = new[] { CharacterCreationScenePath, WorldScenePath },
             locationPathName = ApkOutputPath,
             target = BuildTarget.Android,
-            options = BuildOptions.None
+            options = buildOptions
         };
 
         Debug.Log("[MaliGoBuildPipeline] Starting Android build - this can take several minutes on first run (Gradle setup).");
@@ -61,9 +77,13 @@ public static class MaliGoBuildPipeline
         {
             // A copy named after the version (e.g. MaliGo-0.3.0-beta.1.apk), so files sent to testers say
             // which build they are.
-            string versioned = Path.Combine(outputDir ?? "", $"MaliGo-{PlayerSettings.bundleVersion}.apk");
-            File.Copy(ApkOutputPath, versioned, true);
-            Debug.Log($"[MaliGoBuildPipeline] Version {PlayerSettings.bundleVersion} ({PlayerSettings.Android.bundleVersionCode}), copy at {versioned}");
+            if (buildOptions == BuildOptions.None)
+            {
+                string versioned = Path.Combine(outputDir ?? "", $"MaliGo-{PlayerSettings.bundleVersion}.apk");
+                File.Copy(ApkOutputPath, versioned, true);
+            }
+
+            Debug.Log($"[MaliGoBuildPipeline] Version {PlayerSettings.bundleVersion} ({PlayerSettings.Android.bundleVersionCode}), output {ApkOutputPath}");
             Debug.Log($"[MaliGoBuildPipeline] BUILD SUCCEEDED: {summary.outputPath}\n" +
                       $"Size: {summary.totalSize / (1024f * 1024f):0.0} MB\n" +
                       $"Time: {summary.totalTime}\n" +

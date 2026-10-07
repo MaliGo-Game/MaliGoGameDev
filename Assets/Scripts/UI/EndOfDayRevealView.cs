@@ -37,6 +37,8 @@ namespace MaliGo.UI
         const float RowHeight = 70f;
         const float ArrowSize = 40f;
         const float InputLockout = 0.30f;
+        /// <summary>Longest the animated sequence may run before the watchdog jumps to the final state.</summary>
+        const float MaxSequenceSeconds = 30f;
         const int MaliMaxLines = 3;
 
         Canvas canvas;
@@ -110,6 +112,18 @@ namespace MaliGo.UI
             {
                 Layout(width);
             }
+
+            // Watchdog: the sequence must always end in Finish(), or the button never unlocks and the
+            // game looks frozen (tester report: stuck after "You started Day 1").
+            if (!finished && (sequence == null || Time.unscaledTime - openedAt > MaxSequenceSeconds))
+            {
+                if (sequence != null)
+                {
+                    StopCoroutine(sequence);
+                }
+
+                Finish();
+            }
         }
 
         // ================================================================ public API
@@ -128,7 +142,7 @@ namespace MaliGo.UI
             Layout(safeRoot.rect.width > 0f ? safeRoot.rect.width : UiTheme.ReferenceWidth);
             Fill(data, night);
             Open();
-            sequence = StartCoroutine(Sequence());
+            sequence = StartCoroutine(Guarded(Sequence()));
         }
 
         /// <summary>The plain default (reveal flag off, §7.3 step 2): Mali's one line and the button, nothing else.</summary>
@@ -326,6 +340,62 @@ namespace MaliGo.UI
             }
 
             Finish();
+        }
+
+        /// <summary>Steps <paramref name="routine"/> by hand so an exception inside it is logged and the reveal
+        /// jumps to its final state, instead of the coroutine dying silently with the button locked.</summary>
+        IEnumerator Guarded(IEnumerator routine)
+        {
+            // Nested routines (Wait, TypeLine) are stepped here too, so their exceptions are caught as well.
+            var stack = new Stack<IEnumerator>();
+            stack.Push(routine);
+            while (stack.Count > 0)
+            {
+                object current = null;
+                bool yielded = false;
+                try
+                {
+                    if (stack.Peek().MoveNext())
+                    {
+                        current = stack.Peek().Current;
+                        if (current is IEnumerator nested)
+                        {
+                            stack.Push(nested);
+                        }
+                        else
+                        {
+                            yielded = true;
+                        }
+                    }
+                    else
+                    {
+                        stack.Pop();
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError("[EndOfDayReveal] Sequence failed, showing the final state: " + e);
+                    sequence = null;
+                    try
+                    {
+                        Finish();
+                    }
+                    catch (Exception inner)
+                    {
+                        Debug.LogError("[EndOfDayReveal] Finish failed: " + inner);
+                        finished = true;
+                        buttonGroup.alpha = 1f;
+                        buttonGroup.interactable = true;
+                    }
+
+                    yield break;
+                }
+
+                if (yielded)
+                {
+                    yield return current;
+                }
+            }
         }
 
         IEnumerator Wait(float seconds)

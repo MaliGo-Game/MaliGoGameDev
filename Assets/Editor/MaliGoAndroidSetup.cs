@@ -63,10 +63,13 @@ public static class MaliGoAndroidSetup
 
         PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel26;
         PlayerSettings.Android.targetSdkVersion = AndroidSdkVersions.AndroidApiLevelAuto;
-        PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
+        // Portrait and both landscapes are allowed so character creation can run in portrait
+        // (MaliGoFeatures.PortraitOnboarding). MaliGo.App.OrientationLock narrows this at runtime, before the
+        // first scene: portrait for onboarding, landscape (either way up) for everything else.
+        PlayerSettings.defaultInterfaceOrientation = UIOrientation.AutoRotation;
         PlayerSettings.allowedAutorotateToLandscapeLeft = true;
         PlayerSettings.allowedAutorotateToLandscapeRight = true;
-        PlayerSettings.allowedAutorotateToPortrait = false;
+        PlayerSettings.allowedAutorotateToPortrait = true;
         PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
 
         // Always set (never "keep if already set"), so every build is 0.2.0 / code 2.

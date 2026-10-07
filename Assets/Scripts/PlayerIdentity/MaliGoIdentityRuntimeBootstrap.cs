@@ -77,6 +77,9 @@ namespace MaliGo.PlayerIdentity
             // they can look at but not move in.
             Step("app lifecycle", MaliGo.App.AppLifecycle.Apply);
 
+            // The world and everything over it (pause, reveal, chapter end) is landscape only.
+            Step("orientation", MaliGo.App.OrientationLock.ForGame);
+
             Step("ui router", MaliGo.UI.Kit.UiModal.EnsureRouter);
 
             // The scene's old HUD canvas is replaced by HudView (§7.4).
@@ -158,6 +161,8 @@ namespace MaliGo.PlayerIdentity
                 // without this, CharacterCreation as the boot scene would force it on every launch.
                 if (PlayerDataManager.Instance != null && PlayerDataManager.Instance.IsCharacterCreated)
                 {
+                    // Normally already landscape from OrientationLock's boot lock; confirmed before the world loads.
+                    MaliGo.App.OrientationLock.ForGame();
                     GameFlowController.LoadWorldScene();
                     return;
                 }

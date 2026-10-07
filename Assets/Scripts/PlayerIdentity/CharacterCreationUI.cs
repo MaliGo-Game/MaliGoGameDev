@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using MaliGo.App;
 using MaliGo.Core;
 using MaliGo.Data;
 using MaliGo.Economy;
@@ -17,14 +19,24 @@ namespace MaliGo.PlayerIdentity
     /// the two profile taps.
     /// 1 the promise and the name (Next disabled while the name is empty; the old-save notice when
     ///   <c>PlayerDataManager.WasResetForUpdate</c>, then the flag is cleared);
-    /// 2 "Pick your look": six looks (two builds x light/medium/deep) beside a turning <see cref="LookPreview"/>;
+    /// 2 "Pick your look": six looks (two builds x light/medium/deep) beside (landscape) or under (portrait) a
+    ///   turning <see cref="LookPreview"/>;
     /// 3 the two profile taps, then "We've built your week around where your money goes." and the first three
     ///   places from <c>ChapterSchedule.WeekPlaces</c>; Next needs a pick in both rows and runs
     ///   <c>SpendingProfiles.SetFromOnboarding</c> (skipped when <c>MaliGoFeatures.ProfileTaps</c> is off: the
     ///   default profile is kept);
     /// 4 the savings goal (<c>GoalPresets</c>);
-    /// 5 Mali's three paragraphs, typed and paginated at 3 lines; Let's go sets <c>isCharacterCreated</c> and
-    ///   <c>hasMetMali</c>, runs <c>ChapterFlow.StartChapter(data, 1)</c>, saves and loads the world.
+    /// 5 Mali's three paragraphs, typed and paginated at 3 lines, with a big round continue button under the text;
+    ///   Let's go sets <c>isCharacterCreated</c> and <c>hasMetMali</c>, runs <c>ChapterFlow.StartChapter(data, 1)</c>,
+    ///   saves, turns the screen to landscape and loads the world.
+    ///
+    /// Orientation: <c>MaliGoFeatures.PortraitOnboarding</c> (the A/B switch) asks <see cref="OrientationLock"/> for
+    /// portrait. The layout follows the screen's actual shape, not the switch: a 1500 x 880 sheet centred in
+    /// landscape, or a sheet filling the safe area in portrait with everything in one column and a full-width
+    /// button row at the bottom. When the shape changes (the portrait lock lands a few frames after start, or the
+    /// Editor's Game view is resized) the sheet is rebuilt, keeping the player's entries. On the name screen the
+    /// field and Next stay in the upper half in both layouts, and the sheet lifts if the soft keyboard still
+    /// reaches them.
     /// </summary>
     public class CharacterCreationUI : MonoBehaviour
     {
@@ -39,6 +51,7 @@ namespace MaliGo.PlayerIdentity
         const int ScreenGoal = 4;
         const int ScreenMali = 5;
 
+        // Landscape sheet.
         const float SheetWidth = 1500f;
         const float SheetHeight = 880f;
         const float Margin = 60f;
@@ -48,8 +61,29 @@ namespace MaliGo.PlayerIdentity
         const float LetsGoWidth = 400f;
         const float RingWidth = 6f;
         const float MaliTextWidth = 820f;
+        const float MaliTextHeight = 220f;
         const int MaliLinesPerPage = 3;
-        const float MaliCueSize = 48f;
+        const float MaliPortraitSize = 520f;
+        const float MaliNextSize = 144f;
+        const float NameFieldWidth = 900f;
+
+        // Portrait sheet: fills the safe area inside the screen margin; one column.
+        const float PortraitTop = 100f;
+        const float PortraitBackWidth = 280f;
+        const int PortraitPromiseSize = 64;
+        const float MaliPortraitSizeTall = 440f;
+        const float MaliNextSizeTall = 168f;
+
+        // Shared.
+        const float NameFieldHeight = 144f;
+        const float NameFieldGap = 40f;
+        const float CardGap = 20f;
+        const float MaliNextBob = 10f;
+        const float KeyboardGap = 24f;
+        const float KeyboardLiftSpeed = 3000f;
+        // How long the turn to landscape (after Let's go) or to portrait (before the old-save notice) may take
+        // before the flow goes on regardless; in the Editor the screen never turns.
+        const float RotateTimeout = 1.5f;
 
         static readonly string[] SkinTones = { "light", "medium", "deep" };
         static readonly Color[] ToneSwatches =
@@ -70,6 +104,7 @@ namespace MaliGo.PlayerIdentity
         string goalPick;
 
         Canvas canvas;
+        RectTransform safeRoot;
         RectTransform sheet;
         RectTransform dots;
         RectTransform content;
@@ -88,12 +123,28 @@ namespace MaliGo.PlayerIdentity
         Text summaryPlaces;
         bool summaryShown;
         bool completing;
+        bool noticePending;
+        float noticeWaited;
+
+        // Layout of the current sheet: its shape, its size in u, the safe area it was built for, and its rest
+        // position (the keyboard lift moves it up from there).
+        bool portraitLayout;
+        float sheetWidth;
+        float sheetHeight;
+        Vector2 layoutSafeArea;
+        Vector2 sheetRest;
+        float keyboardLift;
+        RectTransform keyboardTarget;
+        readonly Vector3[] corners = new Vector3[4];
 
         // Screen 5 typewriter.
         readonly List<string> maliPages = new List<string>();
         int maliPage;
+        int maliResumePage = -1;
         Text maliText;
-        Image maliCue;
+        float maliTextWidth = MaliTextWidth;
+        Button maliNext;
+        Vector2 maliNextRest;
         float typed;
         float pauseLeft;
         bool pageDone;
@@ -101,6 +152,8 @@ namespace MaliGo.PlayerIdentity
         void Awake()
         {
             GameFlowController.EnsurePlayerDataManager();
+            // Portrait when the A/B switch is on; usually the boot lock has already done it.
+            OrientationLock.ForOnboarding();
             draft = PlayerData.CreateNew();
 
             screens.Add(ScreenName);
@@ -113,7 +166,8 @@ namespace MaliGo.PlayerIdentity
             screens.Add(ScreenGoal);
             screens.Add(ScreenMali);
 
-            BuildShell();
+            BuildCanvas();
+            BuildSheet();
             ShowScreen(0);
             // Android back (Escape) goes to the previous screen; no modal is ever open here.
             UiModal.BackWithNoModal += OnBack;
@@ -121,20 +175,18 @@ namespace MaliGo.PlayerIdentity
 
         void Start()
         {
-            if (PlayerDataManager.WasResetForUpdate)
-            {
-                NoticeBanner.Show(OnboardingCopy.UpdatedNotice);
-                PlayerDataManager.WasResetForUpdate = false;
-            }
+            // Shown from Update once the onboarding orientation has landed, so the banner is laid out for the
+            // screen it stays on.
+            noticePending = PlayerDataManager.WasResetForUpdate;
         }
 
         void OnDestroy()
         {
             UiModal.BackWithNoModal -= OnBack;
             UiTween.Stop(this);
-            if (maliCue != null)
+            if (maliNext != null)
             {
-                UiTween.Stop(maliCue.rectTransform);
+                UiTween.Stop(maliNext.transform);
             }
 
             if (canvas != null)
@@ -145,38 +197,107 @@ namespace MaliGo.PlayerIdentity
 
         int CurrentScreen => screens[screenIndex];
 
+        /// <summary>The sheet's inner width (TextWidth in landscape).</summary>
+        float ContentWidth => sheetWidth - 2f * Margin;
+
+        /// <summary>Portrait: the lowest y content may reach, above the bottom button row.</summary>
+        float PortraitContentBottom => sheetHeight - ButtonMargin - UiTheme.TargetMin - UiTheme.Space40;
+
         // ================================================================ shell
 
-        void BuildShell()
+        void BuildCanvas()
         {
             canvas = UiCanvasFactory.Create("CharacterCreation_Canvas", UiTheme.Sort.CharacterCreation, transform,
-                out RectTransform safeRoot);
+                out safeRoot);
             UiCanvasFactory.FullBleed(canvas, "Backdrop", UiTheme.Inverse);
+        }
+
+        /// <summary>(Re)builds the sheet, its dots and nav buttons for the screen's current shape.</summary>
+        void BuildSheet()
+        {
+            if (sheet != null)
+            {
+                Destroy(sheet.gameObject);
+            }
+
+            portraitLayout = UiCanvasFactory.ScreenIsPortrait;
+            layoutSafeArea = UiCanvasFactory.SafeAreaSize();
 
             Image sheetImage = UiKit.Panel(safeRoot, "Sheet", UiTheme.Paper, UiTheme.RadiusSheet, true);
             sheetImage.raycastTarget = true;
             sheet = sheetImage.rectTransform;
-            sheet.anchorMin = sheet.anchorMax = sheet.pivot = new Vector2(0.5f, 0.5f);
-            sheet.sizeDelta = new Vector2(SheetWidth, SheetHeight);
+            if (portraitLayout)
+            {
+                // The canvas is 1080 u wide and as tall as the phone; the sheet fills its safe area.
+                float gutter = UiTheme.ScreenMargin;
+                sheet.anchorMin = Vector2.zero;
+                sheet.anchorMax = Vector2.one;
+                sheet.pivot = new Vector2(0.5f, 0.5f);
+                sheet.offsetMin = new Vector2(gutter, gutter);
+                sheet.offsetMax = new Vector2(-gutter, -gutter);
+                sheetWidth = Mathf.Max(0f, layoutSafeArea.x - 2f * gutter);
+                sheetHeight = Mathf.Max(0f, layoutSafeArea.y - 2f * gutter);
+            }
+            else
+            {
+                sheet.anchorMin = sheet.anchorMax = sheet.pivot = new Vector2(0.5f, 0.5f);
+                sheet.sizeDelta = new Vector2(SheetWidth, SheetHeight);
+                sheetWidth = SheetWidth;
+                sheetHeight = SheetHeight;
+            }
+
+            sheetRest = sheet.anchoredPosition;
+            keyboardLift = 0f;
 
             content = UiKit.Rect(sheet, "Content");
             dots = UiKit.Rect(sheet, "Dots");
 
-            backButton = UiKit.SecondaryButton(sheet, OnboardingCopy.BackButton, OnBack, NavButtonWidth);
-            var backRect = (RectTransform)backButton.transform;
-            backRect.anchorMin = backRect.anchorMax = backRect.pivot = new Vector2(0f, 0f);
-            backRect.anchoredPosition = new Vector2(ButtonMargin, ButtonMargin);
-
+            backButton = UiKit.SecondaryButton(sheet, OnboardingCopy.BackButton, OnBack,
+                portraitLayout ? PortraitBackWidth : NavButtonWidth);
             nextButton = UiKit.PrimaryButton(sheet, OnboardingCopy.NextButton, OnNext, NavButtonWidth);
-            var nextRect = (RectTransform)nextButton.transform;
-            nextRect.anchorMin = nextRect.anchorMax = nextRect.pivot = new Vector2(1f, 0f);
-            nextRect.anchoredPosition = new Vector2(-ButtonMargin, ButtonMargin);
-
             letsGoButton = UiKit.PrimaryButton(sheet, OnboardingCopy.LetsGoButton, Complete, LetsGoWidth);
-            var goRect = (RectTransform)letsGoButton.transform;
-            goRect.anchorMin = goRect.anchorMax = goRect.pivot = new Vector2(1f, 0f);
-            goRect.anchoredPosition = new Vector2(-ButtonMargin, ButtonMargin);
             letsGoButton.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// Landscape: Back bottom-left, Next / Let's go bottom-right. Portrait: one full-width row at the bottom,
+        /// Back on the left when shown and the forward button filling the rest. The name screen then moves Next up
+        /// next to its field.
+        /// </summary>
+        void LayoutNav()
+        {
+            var backRect = (RectTransform)backButton.transform;
+            var nextRect = (RectTransform)nextButton.transform;
+            var goRect = (RectTransform)letsGoButton.transform;
+            if (portraitLayout)
+            {
+                PlaceCorner(backRect, Vector2.zero, new Vector2(Margin, ButtonMargin), PortraitBackWidth);
+                float left = backButton.gameObject.activeSelf ? Margin + PortraitBackWidth + UiTheme.TappableGap : Margin;
+                PlaceBottomRow(nextRect, left);
+                PlaceBottomRow(goRect, left);
+            }
+            else
+            {
+                PlaceCorner(backRect, Vector2.zero, new Vector2(ButtonMargin, ButtonMargin), NavButtonWidth);
+                PlaceCorner(nextRect, new Vector2(1f, 0f), new Vector2(-ButtonMargin, ButtonMargin), NavButtonWidth);
+                PlaceCorner(goRect, new Vector2(1f, 0f), new Vector2(-ButtonMargin, ButtonMargin), LetsGoWidth);
+            }
+        }
+
+        static void PlaceCorner(RectTransform rect, Vector2 corner, Vector2 position, float width)
+        {
+            rect.anchorMin = rect.anchorMax = rect.pivot = corner;
+            rect.sizeDelta = new Vector2(width, UiTheme.TargetMin);
+            rect.anchoredPosition = position;
+        }
+
+        static void PlaceBottomRow(RectTransform rect, float left)
+        {
+            rect.anchorMin = new Vector2(0f, 0f);
+            rect.anchorMax = new Vector2(1f, 0f);
+            rect.pivot = new Vector2(0.5f, 0f);
+            rect.sizeDelta = new Vector2(-(left + Margin), UiTheme.TargetMin);
+            rect.anchoredPosition = new Vector2((left - Margin) * 0.5f, ButtonMargin);
         }
 
         void BuildDots()
@@ -211,6 +332,7 @@ namespace MaliGo.PlayerIdentity
             backButton.gameObject.SetActive(screen != ScreenName);
             nextButton.gameObject.SetActive(screen != ScreenMali);
             letsGoButton.gameObject.SetActive(false);
+            LayoutNav();
 
             switch (screen)
             {
@@ -224,6 +346,20 @@ namespace MaliGo.PlayerIdentity
             UpdateNext();
         }
 
+        /// <summary>Rebuilds the sheet for the screen's new shape, keeping the entries and Mali's page.</summary>
+        void Relayout()
+        {
+            Capture();
+            if (CurrentScreen == ScreenMali && maliPages.Count > 0)
+            {
+                maliResumePage = maliPage;
+            }
+
+            ClearContent();
+            BuildSheet();
+            ShowScreen(screenIndex);
+        }
+
         void ClearContent()
         {
             lookCards.Clear();
@@ -231,18 +367,25 @@ namespace MaliGo.PlayerIdentity
             travelCards.Clear();
             goalCards.Clear();
             nameInput = null;
+            keyboardTarget = null;
             lookPreview = null;
             summaryGroup = null;
             summaryPlaces = null;
             summaryShown = false;
             maliText = null;
-            if (maliCue != null)
+            if (maliNext != null)
             {
-                UiTween.Stop(maliCue.rectTransform);
-                maliCue = null;
+                UiTween.Stop(maliNext.transform);
+                maliNext = null;
             }
 
             maliPages.Clear();
+
+            if (sheet != null)
+            {
+                keyboardLift = 0f;
+                sheet.anchoredPosition = sheetRest;
+            }
 
             for (int i = content.childCount - 1; i >= 0; i--)
             {
@@ -382,25 +525,175 @@ namespace MaliGo.PlayerIdentity
                 PlayerDataManager.Instance.SetPlayerData(draft, saveImmediately: true);
             }
 
+            StartCoroutine(EnterWorld());
+        }
+
+        /// <summary>
+        /// The world is landscape only. From portrait the screen is turned first, behind the plain green backdrop
+        /// (the sheet is hidden so it is never seen relaid out sideways), and the world loads once the screen is
+        /// landscape, so its HUD, controls and camera are built at their final size. Gives up waiting after
+        /// <see cref="RotateTimeout"/>; the world's canvases follow a late turn anyway (SafeAreaFitter,
+        /// CanvasOrientationScaler, and the camera's aspect follows the screen).
+        /// </summary>
+        IEnumerator EnterWorld()
+        {
+            OrientationLock.ForGame();
+            if (UiCanvasFactory.ScreenIsPortrait)
+            {
+                if (sheet != null)
+                {
+                    sheet.gameObject.SetActive(false);
+                }
+
+                float waited = 0f;
+                while (UiCanvasFactory.ScreenIsPortrait && waited < RotateTimeout)
+                {
+                    waited += Time.unscaledDeltaTime;
+                    yield return null;
+                }
+
+                // One more frame, so Screen.safeArea has caught up with the new size.
+                yield return null;
+            }
+
             GameFlowController.LoadWorldScene();
+        }
+
+        // ================================================================ per frame
+
+        void Update()
+        {
+            if (!completing && NeedsRelayout())
+            {
+                Relayout();
+            }
+
+            UpdateNotice();
+            UpdateKeyboardLift();
+            UpdateMaliTyping();
+        }
+
+        bool NeedsRelayout()
+        {
+            if (UiCanvasFactory.ScreenIsPortrait != portraitLayout)
+            {
+                return true;
+            }
+
+            // The portrait sheet is sized from the safe area, which can settle a frame after a turn.
+            return portraitLayout && (UiCanvasFactory.SafeAreaSize() - layoutSafeArea).sqrMagnitude > 4f;
+        }
+
+        void UpdateNotice()
+        {
+            if (!noticePending)
+            {
+                return;
+            }
+
+            noticeWaited += Time.unscaledDeltaTime;
+            bool settled = UiCanvasFactory.ScreenIsPortrait == OrientationLock.OnboardingIsPortrait;
+            if (!settled && noticeWaited < RotateTimeout)
+            {
+                return;
+            }
+
+            noticePending = false;
+            NoticeBanner.Show(OnboardingCopy.UpdatedNotice);
+            PlayerDataManager.WasResetForUpdate = false;
+        }
+
+        /// <summary>
+        /// While the soft keyboard is up on the name screen, lifts the sheet just enough to keep the field (and,
+        /// in portrait, the Next button under it) above the keyboard. The layouts keep both in the upper half, so
+        /// this only moves anything on short screens or with a tall keyboard. Eases back down when it closes.
+        /// </summary>
+        void UpdateKeyboardLift()
+        {
+            if (sheet == null || completing)
+            {
+                return;
+            }
+
+            float target = 0f;
+            if (CurrentScreen == ScreenName && nameInput != null && keyboardTarget != null && nameInput.isFocused &&
+                TouchScreenKeyboard.isSupported && TouchScreenKeyboard.visible && canvas != null &&
+                canvas.scaleFactor > 0f)
+            {
+                // The keyboard covers the bottom of the screen; its height is in pixels.
+                float keyboardTop = TouchScreenKeyboard.area.height / canvas.scaleFactor;
+                if (keyboardTop > 0f)
+                {
+                    // Screen Space Overlay: world corners are screen pixels (bottom-left origin).
+                    keyboardTarget.GetWorldCorners(corners);
+                    float bottom = corners[0].y / canvas.scaleFactor - keyboardLift;
+                    target = Mathf.Max(0f, keyboardTop + KeyboardGap - bottom);
+                }
+            }
+
+            if (Mathf.Approximately(target, keyboardLift))
+            {
+                return;
+            }
+
+            keyboardLift = UiTween.ReduceMotion
+                ? target
+                : Mathf.MoveTowards(keyboardLift, target, KeyboardLiftSpeed * Time.unscaledDeltaTime);
+            sheet.anchoredPosition = sheetRest + new Vector2(0f, keyboardLift);
         }
 
         // ================================================================ screen 1: promise + name
 
         void BuildNameScreen()
         {
-            Text promise = UiKit.Label(content, "Promise", OnboardingCopy.PromiseLine1 + "\n" + OnboardingCopy.PromiseLine2,
-                UiTheme.DisplayTitle, UiTheme.TextPrimary);
-            promise.horizontalOverflow = HorizontalWrapMode.Overflow;
-            SetTopLeft(promise.rectTransform, Margin, 90f, TextWidth, 158f);
+            // The field and Next stay in the upper half in both layouts, clear of the soft keyboard.
+            string promiseText = OnboardingCopy.PromiseLine1 + "\n" + OnboardingCopy.PromiseLine2;
+            UiTheme.TextRole questionRole = UiTheme.Body.WithWeight(UiFontWeight.Bold);
+            float fieldY;
+            float fieldWidth;
+            if (portraitLayout)
+            {
+                Text promise = UiKit.Label(content, "Promise", promiseText,
+                    UiTheme.DisplayTitle.WithSize(PortraitPromiseSize), UiTheme.TextPrimary);
+                float y = StackLabel(promise, Margin, PortraitTop, ContentWidth);
 
-            Text question = UiKit.Label(content, "Question", OnboardingCopy.NameQuestion,
-                UiTheme.Body.WithWeight(UiFontWeight.Bold), UiTheme.TextSecondary);
-            SetTopLeft(question.rectTransform, Margin, 288f, TextWidth, 52f);
+                Text question = UiKit.Label(content, "Question", OnboardingCopy.NameQuestion, questionRole,
+                    UiTheme.TextSecondary);
+                y = StackLabel(question, Margin, y + UiTheme.Space40, ContentWidth);
+                fieldY = y + 24f;
+                fieldWidth = ContentWidth;
+            }
+            else
+            {
+                Text promise = UiKit.Label(content, "Promise", promiseText, UiTheme.DisplayTitle, UiTheme.TextPrimary);
+                promise.horizontalOverflow = HorizontalWrapMode.Overflow;
+                SetTopLeft(promise.rectTransform, Margin, 80f, TextWidth, 158f);
 
-            nameInput = BuildNameField(content, Margin, 352f);
+                Text question = UiKit.Label(content, "Question", OnboardingCopy.NameQuestion, questionRole,
+                    UiTheme.TextSecondary);
+                SetTopLeft(question.rectTransform, Margin, 268f, TextWidth, 52f);
+                fieldY = 330f;
+                fieldWidth = NameFieldWidth;
+            }
+
+            nameInput = BuildNameField(content, Margin, fieldY, fieldWidth);
             nameInput.text = draftName;
             nameInput.onValueChanged.AddListener(_ => UpdateNext());
+
+            // Next right under (portrait) or beside (landscape) the field rather than at the sheet's foot, where
+            // the keyboard would cover it.
+            var nextRect = (RectTransform)nextButton.transform;
+            if (portraitLayout)
+            {
+                SetTopLeft(nextRect, Margin, fieldY + NameFieldHeight + NameFieldGap, ContentWidth, UiTheme.TargetMin);
+                keyboardTarget = nextRect;
+            }
+            else
+            {
+                SetTopLeft(nextRect, Margin + fieldWidth + NameFieldGap, fieldY, NavButtonWidth, UiTheme.TargetMin);
+                keyboardTarget = (RectTransform)nameInput.transform;
+            }
+
             UiTween.Delay(this, 0.05f, () =>
             {
                 if (nameInput != null)
@@ -411,11 +704,11 @@ namespace MaliGo.PlayerIdentity
             });
         }
 
-        InputField BuildNameField(RectTransform parent, float x, float y)
+        InputField BuildNameField(RectTransform parent, float x, float y, float width)
         {
             Image border = UiKit.Panel(parent, "Name field", UiTheme.BorderControl, UiTheme.RadiusButton, false);
             border.raycastTarget = true;
-            SetTopLeft(border.rectTransform, x, y, 900f, 144f);
+            SetTopLeft(border.rectTransform, x, y, width, NameFieldHeight);
 
             Image fill = UiKit.Panel(border.rectTransform, "Fill", UiTheme.Sunken, UiTheme.RadiusButton - UiTheme.Stroke, false);
             fill.rectTransform.offsetMin = new Vector2(UiTheme.Stroke, UiTheme.Stroke);
@@ -454,7 +747,7 @@ namespace MaliGo.PlayerIdentity
 
         void BuildLookScreen()
         {
-            AddTitle(OnboardingCopy.LookTitle);
+            float titleBottom = AddTitle(OnboardingCopy.LookTitle);
 
             if (!catalogLoaded)
             {
@@ -471,30 +764,53 @@ namespace MaliGo.PlayerIdentity
             }
 
             lookPreview = LookPreview.Create(content, catalog, AppearanceFor(lookIndex));
-            const float cardW = 246f;
             const float cardH = 160f;
-            const float gap = 20f;
-            float gridW = 3f * cardW + 2f * gap;
-            float gridH = 2f * cardH + gap;
+            float cardW;
             float gridX;
             float gridY;
-            if (lookPreview != null)
+            if (portraitLayout)
             {
-                SetTopLeft(lookPreview.Rect, Margin, 128f, LookPreview.ImageSize, LookPreview.ImageSize);
-                gridX = SheetWidth - Margin - gridW;
-                gridY = 128f + (LookPreview.ImageSize - gridH) * 0.5f;
+                // One column: the turning model above the six looks, both centred. The model shrinks (to half
+                // size at most) if a short screen cannot fit it above the cards.
+                cardW = Mathf.Floor((ContentWidth - 2f * CardGap) / 3f);
+                float gridW = 3f * cardW + 2f * CardGap;
+                float gridH = 2f * cardH + CardGap;
+                float y = titleBottom + 32f;
+                if (lookPreview != null)
+                {
+                    float room = PortraitContentBottom - y - UiTheme.Space40 - gridH;
+                    float size = Mathf.Clamp(Mathf.Min(room, ContentWidth), LookPreview.ImageSize * 0.5f,
+                        LookPreview.ImageSize);
+                    SetTopLeft(lookPreview.Rect, (sheetWidth - size) * 0.5f, y, size, size);
+                    y += size + UiTheme.Space40;
+                }
+
+                gridX = (sheetWidth - gridW) * 0.5f;
+                gridY = y;
             }
             else
             {
-                gridX = (SheetWidth - gridW) * 0.5f;
+                cardW = 246f;
+                float gridW = 3f * cardW + 2f * CardGap;
+                float gridH = 2f * cardH + CardGap;
+                if (lookPreview != null)
+                {
+                    SetTopLeft(lookPreview.Rect, Margin, 128f, LookPreview.ImageSize, LookPreview.ImageSize);
+                    gridX = SheetWidth - Margin - gridW;
+                }
+                else
+                {
+                    gridX = (SheetWidth - gridW) * 0.5f;
+                }
+
                 gridY = 128f + (LookPreview.ImageSize - gridH) * 0.5f;
             }
 
             for (int i = 0; i < 6; i++)
             {
                 int index = i;
-                float x = gridX + (i % 3) * (cardW + gap);
-                float y = gridY + (i / 3) * (cardH + gap);
+                float x = gridX + (i % 3) * (cardW + CardGap);
+                float y = gridY + (i / 3) * (cardH + CardGap);
                 CardView card = CardView.Create(content, "Look " + (i + 1), x, y, cardW, cardH, () => PickLook(index));
 
                 Image swatch = UiKit.SpriteImage(card.Body, "Swatch", UiKit.Circle, 48f, ToneSwatches[i % 3]);
@@ -527,52 +843,72 @@ namespace MaliGo.PlayerIdentity
         void BuildProfileScreen()
         {
             UiTheme.TextRole questionRole = UiTheme.Body.WithWeight(UiFontWeight.Bold);
-            const float cardW = 330f;
-            const float cardH = 144f;
-            const float gap = 20f;
-
             Text q1 = UiKit.Label(content, "Spend question", OnboardingCopy.SpendQuestion, questionRole, UiTheme.TextPrimary);
-            SetTopLeft(q1.rectTransform, Margin, 80f, TextWidth, 52f);
-            for (int i = 0; i < SpendingFocus.All.Length; i++)
-            {
-                ProfileOption option = SpendingFocus.All[i];
-                CardView card = CardView.Create(content, "Focus " + option.id, Margin + i * (cardW + gap), 144f, cardW, cardH,
-                    () => PickFocus(option.id));
-                AddCardLabel(card, option.cardLabel);
-                focusCards.Add(card);
-            }
-
             Text q2 = UiKit.Label(content, "Travel question", OnboardingCopy.TravelQuestion, questionRole, UiTheme.TextPrimary);
-            SetTopLeft(q2.rectTransform, Margin, 318f, TextWidth, 52f);
-            for (int i = 0; i < TravelMode.All.Length; i++)
+            RectTransform summary = UiKit.Rect(content, "Summary");
+            Text built = UiKit.Label(summary, "Week built", OnboardingCopy.WeekBuiltLine, UiTheme.Body, UiTheme.TextPrimary);
+            summaryPlaces = UiKit.Label(summary, "Places", "", UiTheme.Label, UiTheme.TextSecondary);
+
+            if (portraitLayout)
             {
-                ProfileOption option = TravelMode.All[i];
-                CardView card = CardView.Create(content, "Travel " + option.id, Margin + i * (cardW + gap), 382f, cardW, cardH,
-                    () => PickTravel(option.id));
-                AddCardLabel(card, option.cardLabel);
-                travelCards.Add(card);
+                // One column: each question over a 2 x 2 grid of its four answers, then the summary.
+                float cardW = Mathf.Floor((ContentWidth - CardGap) * 0.5f);
+                const float cardH = 128f;
+                float y = StackLabel(q1, Margin, PortraitTop, ContentWidth) + 24f;
+                y = AddOptionGrid(SpendingFocus.All, "Focus ", focusCards, PickFocus, y, cardW, cardH, 2);
+                y = StackLabel(q2, Margin, y + 48f, ContentWidth) + 24f;
+                y = AddOptionGrid(TravelMode.All, "Travel ", travelCards, PickTravel, y, cardW, cardH, 2);
+
+                float builtHeight = StackLabel(built, 0f, 0f, ContentWidth);
+                float placesHeight = Mathf.Ceil(2f * LineHeight(summaryPlaces));
+                SetTopLeft(summaryPlaces.rectTransform, 0f, builtHeight + 8f, ContentWidth, placesHeight);
+                SetTopLeft(summary, Margin, y + 48f, ContentWidth, builtHeight + 8f + placesHeight);
+            }
+            else
+            {
+                SetTopLeft(q1.rectTransform, Margin, 80f, TextWidth, 52f);
+                AddOptionGrid(SpendingFocus.All, "Focus ", focusCards, PickFocus, 144f, 330f, 144f, 4);
+                SetTopLeft(q2.rectTransform, Margin, 318f, TextWidth, 52f);
+                AddOptionGrid(TravelMode.All, "Travel ", travelCards, PickTravel, 382f, 330f, 144f, 4);
+
+                SetTopLeft(summary, Margin, 550f, TextWidth, 96f);
+                SetTopLeft(built.rectTransform, 0f, 0f, TextWidth, 52f);
+                SetTopLeft(summaryPlaces.rectTransform, 0f, 52f, TextWidth, 44f);
             }
 
-            RectTransform summary = UiKit.Rect(content, "Summary");
-            SetTopLeft(summary, Margin, 550f, TextWidth, 96f);
             summaryGroup = summary.gameObject.AddComponent<CanvasGroup>();
             summaryGroup.alpha = 0f;
             summaryGroup.blocksRaycasts = false;
 
-            Text built = UiKit.Label(summary, "Week built", OnboardingCopy.WeekBuiltLine, UiTheme.Body, UiTheme.TextPrimary);
-            SetTopLeft(built.rectTransform, 0f, 0f, TextWidth, 52f);
-            summaryPlaces = UiKit.Label(summary, "Places", "", UiTheme.Label, UiTheme.TextSecondary);
-            SetTopLeft(summaryPlaces.rectTransform, 0f, 52f, TextWidth, 44f);
-
             RefreshProfile(false);
         }
 
-        void AddCardLabel(CardView card, string text)
+        /// <summary>Lays <paramref name="options"/> out as cards in <paramref name="columns"/> columns from
+        /// (Margin, <paramref name="y"/>) and returns the y under the last row.</summary>
+        float AddOptionGrid(ProfileOption[] options, string namePrefix, List<CardView> cards, Action<string> pick,
+            float y, float cardW, float cardH, int columns)
+        {
+            for (int i = 0; i < options.Length; i++)
+            {
+                ProfileOption option = options[i];
+                float x = Margin + (i % columns) * (cardW + CardGap);
+                float cardY = y + (i / columns) * (cardH + CardGap);
+                CardView card = CardView.Create(content, namePrefix + option.id, x, cardY, cardW, cardH,
+                    () => pick(option.id));
+                AddCardLabel(card, option.cardLabel, cardW - 80f);
+                cards.Add(card);
+            }
+
+            int rows = (options.Length + columns - 1) / columns;
+            return y + rows * cardH + Mathf.Max(0, rows - 1) * CardGap;
+        }
+
+        void AddCardLabel(CardView card, string text, float width)
         {
             Text label = UiKit.Label(card.Body, "Label", text, UiTheme.Label, UiTheme.TextPrimary, TextAnchor.MiddleCenter);
             RectTransform rect = label.rectTransform;
             rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(250f, 100f);
+            rect.sizeDelta = new Vector2(width, 100f);
             rect.anchoredPosition = Vector2.zero;
         }
 
@@ -637,27 +973,61 @@ namespace MaliGo.PlayerIdentity
 
         void BuildGoalScreen()
         {
-            AddTitle(OnboardingCopy.GoalTitle);
-            const float cardW = 560f;
-            const float cardH = 220f;
-            const float gap = 20f;
-            float x0 = (SheetWidth - (2f * cardW + gap)) * 0.5f;
-            const float y0 = 150f;
+            float titleBottom = AddTitle(OnboardingCopy.GoalTitle);
+            float cardW;
+            float cardH;
+            float x0;
+            float y0;
+            int columns;
+            if (portraitLayout)
+            {
+                // One column of wide cards: title and caption on the left, the target on the right.
+                cardW = ContentWidth;
+                cardH = 160f;
+                x0 = Margin;
+                y0 = titleBottom + UiTheme.Space40;
+                columns = 1;
+            }
+            else
+            {
+                cardW = 560f;
+                cardH = 220f;
+                x0 = (SheetWidth - (2f * cardW + CardGap)) * 0.5f;
+                y0 = 150f;
+                columns = 2;
+            }
 
             for (int i = 0; i < GoalPresets.All.Length; i++)
             {
                 GoalPreset preset = GoalPresets.All[i];
-                CardView card = CardView.Create(content, "Goal " + preset.id, x0 + (i % 2) * (cardW + gap),
-                    y0 + (i / 2) * (cardH + gap), cardW, cardH, () => PickGoal(preset.id));
+                CardView card = CardView.Create(content, "Goal " + preset.id, x0 + (i % columns) * (cardW + CardGap),
+                    y0 + (i / columns) * (cardH + CardGap), cardW, cardH, () => PickGoal(preset.id));
 
                 Text title = UiKit.Label(card.Body, "Title", preset.title, UiTheme.Label, UiTheme.TextPrimary);
-                SetTopLeft(title.rectTransform, 36f, 30f, cardW - 72f, 44f);
-                Text target = UiKit.Label(card.Body, "Target", MoneyFormat.Rand(preset.target), UiTheme.HudValue,
-                    UiTheme.TextPrimary);
-                SetTopLeft(target.rectTransform, 36f, 86f, cardW - 72f, 52f);
                 Text caption = UiKit.Label(card.Body, "Caption", OnboardingCopy.GoalSavedCaption, UiTheme.Caption,
                     UiTheme.TextMuted);
-                SetTopLeft(caption.rectTransform, 36f, 150f, cardW - 72f, 40f);
+                if (portraitLayout)
+                {
+                    const float targetWidth = 280f;
+                    const float rightPad = 40f;
+                    float leftWidth = cardW - 36f - targetWidth - rightPad - CardGap;
+                    SetTopLeft(title.rectTransform, 36f, 34f, leftWidth, 44f);
+                    SetTopLeft(caption.rectTransform, 36f, 90f, leftWidth, 40f);
+                    // Vertically centred, below the selected check in the top-right corner.
+                    Text target = UiKit.Label(card.Body, "Target", MoneyFormat.Rand(preset.target), UiTheme.HudValue,
+                        UiTheme.TextPrimary, TextAnchor.MiddleRight);
+                    SetTopLeft(target.rectTransform, cardW - rightPad - targetWidth, (cardH - 52f) * 0.5f + 8f,
+                        targetWidth, 52f);
+                }
+                else
+                {
+                    SetTopLeft(title.rectTransform, 36f, 30f, cardW - 72f, 44f);
+                    Text target = UiKit.Label(card.Body, "Target", MoneyFormat.Rand(preset.target), UiTheme.HudValue,
+                        UiTheme.TextPrimary);
+                    SetTopLeft(target.rectTransform, 36f, 86f, cardW - 72f, 52f);
+                    SetTopLeft(caption.rectTransform, 36f, 150f, cardW - 72f, 40f);
+                }
+
                 goalCards.Add(card);
             }
 
@@ -689,7 +1059,8 @@ namespace MaliGo.PlayerIdentity
 
         void BuildMaliScreen()
         {
-            // The whole content area advances the text; the buttons sit above it.
+            // The whole content area advances the text (a swipe that starts and ends on it counts as a tap); the
+            // buttons sit above it.
             Image tapZone = UiKit.Panel(content, "Tap zone", Color.clear, 1f, false);
             tapZone.sprite = UiKit.White;
             tapZone.type = Image.Type.Simple;
@@ -701,28 +1072,88 @@ namespace MaliGo.PlayerIdentity
             tap.navigation = nav;
             tap.onClick.AddListener(OnMaliTap);
 
-            Image portrait = UiKit.SpriteImage(content, "Mali", UiKit.MaliPortrait, 520f, Color.white);
-            SetTopLeft(portrait.rectTransform, Margin, 110f, 520f, 520f);
+            float nextSize;
+            float textX;
+            float textY;
+            float nextGap;
+            if (portraitLayout)
+            {
+                // One column: Mali, her text, the continue button; the group sits a little above the middle of
+                // the room over the bottom row.
+                const float size = MaliPortraitSizeTall;
+                nextSize = MaliNextSizeTall;
+                nextGap = UiTheme.Space40;
+                maliTextWidth = ContentWidth;
+                float groupHeight = size + UiTheme.Space40 + MaliTextHeight + nextGap + nextSize;
+                float top = PortraitTop + Mathf.Max(0f, (PortraitContentBottom - PortraitTop - groupHeight) * 0.4f);
+
+                Image portrait = UiKit.SpriteImage(content, "Mali", UiKit.MaliPortrait, size, Color.white);
+                SetTopLeft(portrait.rectTransform, (sheetWidth - size) * 0.5f, top, size, size);
+                textX = Margin;
+                textY = top + size + UiTheme.Space40;
+            }
+            else
+            {
+                nextSize = MaliNextSize;
+                nextGap = 24f;
+                maliTextWidth = MaliTextWidth;
+                Image portrait = UiKit.SpriteImage(content, "Mali", UiKit.MaliPortrait, MaliPortraitSize, Color.white);
+                SetTopLeft(portrait.rectTransform, Margin, 110f, MaliPortraitSize, MaliPortraitSize);
+                textX = Margin + MaliPortraitSize + 40f;
+                textY = 250f;
+            }
 
             maliText = UiKit.Label(content, "Mali text", "", UiTheme.Dialogue, UiTheme.TextPrimary);
             maliText.horizontalOverflow = HorizontalWrapMode.Overflow;
-            SetTopLeft(maliText.rectTransform, Margin + 520f + 40f, 250f, MaliTextWidth, 220f);
+            SetTopLeft(maliText.rectTransform, textX, textY, maliTextWidth, MaliTextHeight);
 
-            // The continue cue, as in Mali's dialogue box: a bobbing "down" under the text's right edge once a page
-            // is typed, so a new player knows a tap shows the next page. The last page shows Let's go instead.
-            maliCue = UiKit.IconImage(content, "Cue", "down", MaliCueSize, UiTheme.AccentPrimary);
-            maliCue.raycastTarget = false;
-            SetTopLeft(maliCue.rectTransform, Margin + 520f + 40f + MaliTextWidth - MaliCueSize, 250f + 220f + 16f,
-                MaliCueSize, MaliCueSize);
-            maliCue.gameObject.SetActive(false);
+            // The continue button (tester feedback): a big round "down" centred under the text, so a new player
+            // knows a tap shows the next page. It bobs once a page is typed; the last page shows Let's go instead.
+            maliNext = BuildMaliNext(nextSize);
+            var nextRect = (RectTransform)maliNext.transform;
+            SetTopLeft(nextRect, textX + (maliTextWidth - nextSize) * 0.5f, textY + MaliTextHeight + nextGap,
+                nextSize, nextSize);
+            maliNextRest = nextRect.anchoredPosition;
 
             foreach (string template in new[] { MaliParagraph1, MaliParagraph2, MaliParagraph3 })
             {
                 string filled = MaliText.Fill(template, draft);
-                maliPages.AddRange(UiTextLayout.Paginate(maliText, filled, MaliTextWidth, MaliLinesPerPage));
+                maliPages.AddRange(UiTextLayout.Paginate(maliText, filled, maliTextWidth, MaliLinesPerPage));
             }
 
-            StartMaliPage(0);
+            // After a relayout, back to the page the player was on, already typed.
+            int resume = maliResumePage;
+            maliResumePage = -1;
+            if (resume > 0 && maliPages.Count > 0)
+            {
+                StartMaliPage(Mathf.Min(resume, maliPages.Count - 1));
+                CompleteMaliPage();
+            }
+            else
+            {
+                StartMaliPage(0);
+            }
+        }
+
+        /// <summary>A round <see cref="UiTheme.AccentPrimary"/> button <paramref name="size"/> u across with a white
+        /// down arrow (the kit's <c>arrowDown</c> icon, else <c>down</c>), card shadow, press feedback.</summary>
+        Button BuildMaliNext(float size)
+        {
+            Button button = UiKit.PrimaryButton(content, string.Empty, OnMaliTap, size, size);
+            button.gameObject.name = "Continue";
+            var background = (Image)button.targetGraphic;
+            UiKit.SetRadius(background, size * 0.5f);
+            UiKit.AddShadow(background, UiTheme.ShadowCard);
+
+            Image arrow = UiKit.IconImage((RectTransform)button.transform, "Arrow", "arrowDown", size * 0.5f,
+                UiTheme.TextOnInverse);
+            if (arrow.sprite == null)
+            {
+                arrow.sprite = UiKit.Icon("down");
+                arrow.color = arrow.sprite != null ? UiTheme.TextOnInverse : Color.clear;
+            }
+
+            return button;
         }
 
         void StartMaliPage(int page)
@@ -732,7 +1163,7 @@ namespace MaliGo.PlayerIdentity
             pauseLeft = 0f;
             pageDone = false;
             maliText.text = "";
-            SetMaliCue(false);
+            RefreshMaliNext();
             GameEvents.RaiseMaliSpoke();
             if (!MaliGoFeatures.Typewriter || GameSettings.InstantText)
             {
@@ -749,7 +1180,7 @@ namespace MaliGo.PlayerIdentity
 
             maliText.text = maliPages[maliPage];
             pageDone = true;
-            SetMaliCue(maliPage < maliPages.Count - 1);
+            RefreshMaliNext();
             if (maliPage == maliPages.Count - 1 && !letsGoButton.gameObject.activeSelf)
             {
                 letsGoButton.gameObject.SetActive(true);
@@ -764,21 +1195,24 @@ namespace MaliGo.PlayerIdentity
             }
         }
 
-        void SetMaliCue(bool visible)
+        /// <summary>The continue button shows while there is more to read (every page but the last, and the last
+        /// one until it is typed: a tap finishes it), and bobs once the page is typed (still with reduce motion,
+        /// <see cref="UiTween.Bob"/> does nothing).</summary>
+        void RefreshMaliNext()
         {
-            if (maliCue == null)
+            if (maliNext == null)
             {
                 return;
             }
 
-            RectTransform rect = maliCue.rectTransform;
+            var rect = (RectTransform)maliNext.transform;
             UiTween.Stop(rect);
-            rect.anchoredPosition = new Vector2(Margin + 520f + 40f + MaliTextWidth - MaliCueSize, -(250f + 220f + 16f));
-            bool show = visible && maliCue.sprite != null;
-            maliCue.gameObject.SetActive(show);
-            if (show)
+            rect.anchoredPosition = maliNextRest;
+            bool lastDone = pageDone && maliPage >= maliPages.Count - 1;
+            maliNext.gameObject.SetActive(!lastDone);
+            if (!lastDone && pageDone)
             {
-                UiTween.Bob(rect);
+                UiTween.Bob(rect, MaliNextBob);
             }
         }
 
@@ -799,7 +1233,7 @@ namespace MaliGo.PlayerIdentity
             }
         }
 
-        void Update()
+        void UpdateMaliTyping()
         {
             if (maliText == null || pageDone || maliPage >= maliPages.Count)
             {
@@ -839,11 +1273,38 @@ namespace MaliGo.PlayerIdentity
 
         // ================================================================ helpers
 
-        void AddTitle(string title)
+        /// <summary>Adds the screen title and returns the y under it (wrapping in portrait).</summary>
+        float AddTitle(string title)
         {
             Text label = UiKit.Label(content, "Title", title, UiTheme.Title, UiTheme.TextPrimary);
+            if (portraitLayout)
+            {
+                return StackLabel(label, Margin, PortraitTop, ContentWidth);
+            }
+
             label.horizontalOverflow = HorizontalWrapMode.Overflow;
             SetTopLeft(label.rectTransform, Margin, 60f, TextWidth, 64f);
+            return 124f;
+        }
+
+        /// <summary>Places a wrapping label at (<paramref name="x"/>, <paramref name="y"/>) from the top-left, as
+        /// tall as its lines, and returns the y under it. The text is pre-broken a little narrower than the rect,
+        /// so Unity's own wrap never adds a line the height did not count.</summary>
+        static float StackLabel(Text label, float x, float y, float width)
+        {
+            float wrapWidth = Mathf.Max(1f, width - 8f);
+            label.horizontalOverflow = HorizontalWrapMode.Wrap;
+            label.text = UiTextLayout.Wrap(label, label.text, wrapWidth);
+            int lines = Mathf.Max(1, UiTextLayout.CountLines(label, label.text, wrapWidth));
+            float height = Mathf.Ceil(lines * LineHeight(label));
+            SetTopLeft(label.rectTransform, x, y, width, height);
+            return y + height;
+        }
+
+        /// <summary>One line of <paramref name="label"/> in u (a role's size x its line spacing).</summary>
+        static float LineHeight(Text label)
+        {
+            return label.fontSize * label.lineSpacing * UiTheme.FontLineHeightEm;
         }
 
         static void RefreshCards(List<CardView> cards, int selected)

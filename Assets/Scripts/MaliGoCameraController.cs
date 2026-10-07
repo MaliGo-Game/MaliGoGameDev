@@ -46,6 +46,12 @@ public class MaliGoCameraController : MonoBehaviour
             minZoom = OrthographicMinZoom;
             maxZoom = OrthographicMaxZoom;
         }
+
+        // Put the camera straight back along its own viewing direction, so the target lands in the centre of
+        // the screen. The scene's (-8, 8, -8) offset doesn't match the 30/45 degree angle, which left the
+        // player at the bottom edge on a phone, behind trees and fences and next to the joystick.
+        float distance = Mathf.Max(offset.magnitude, 8f);
+        offset = Quaternion.Euler(isometricRotation) * Vector3.back * distance;
     }
 
     void Start()

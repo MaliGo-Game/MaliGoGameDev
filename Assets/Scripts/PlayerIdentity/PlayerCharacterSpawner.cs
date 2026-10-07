@@ -175,6 +175,11 @@ namespace MaliGo.PlayerIdentity
             controller.center = new Vector3(0f, ControllerHeight * 0.5f, 0f);
             controller.slopeLimit = 45f;
             controller.stepOffset = ControllerHeight * 0.14f;
+            // Unity's default skin (0.08) is almost the whole 0.09 radius at this scale: the capsule then rests
+            // 0.08 u (~30 cm) above the ground and stops that far short of walls. Unity's guidance is ~10% of the
+            // radius. No minimum move either, so a light joystick tilt at a high frame rate still moves.
+            controller.skinWidth = ControllerRadius * 0.1f;
+            controller.minMoveDistance = 0f;
 
             Rigidbody rigidbody = playerRoot.AddComponent<Rigidbody>();
             rigidbody.isKinematic = true;

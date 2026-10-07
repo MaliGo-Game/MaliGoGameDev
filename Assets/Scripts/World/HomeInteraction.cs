@@ -34,6 +34,8 @@ namespace MaliGo.World
             return (panel == null || !panel.IsOpen) && (sleepConfirm == null || !sleepConfirm.IsOpen);
         }
 
+        public override bool IsBuildingEntrance => true;
+
         protected override void OnInteract()
         {
             PlayerData data = PlayerDataAccess.GetCurrentPlayer();

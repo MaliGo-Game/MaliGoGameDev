@@ -1,15 +1,18 @@
 using UnityEngine;
 using MaliGo.Characters;
+using MaliGo.Core;
 using MaliGo.UI.Kit;
+using MaliGo.World;
 
 [RequireComponent(typeof(CharacterController))]
 [RequireComponent(typeof(Rigidbody))]
 public class MaliGoPlayerController : MonoBehaviour
 {
     [Header("Movement Settings")]
-    public float moveSpeed = 4.5f;
-    public float acceleration = 25f;
-    public float deceleration = 30f;
+    // Overwritten in Awake from MovementMath (a serialized value must not bring the old 4.5 u/s back).
+    public float moveSpeed = MovementMath.WalkSpeed;
+    public float acceleration = MovementMath.WalkSpeed / MovementMath.AccelerateSeconds;
+    public float deceleration = MovementMath.WalkSpeed / MovementMath.DecelerateSeconds;
     public float gravity = -18f;
 
     [Header("Input Source")]
@@ -25,8 +28,17 @@ public class MaliGoPlayerController : MonoBehaviour
     private float verticalVelocity = 0f;
     private Vector2 lastNonZeroInput = Vector2.up;
 
+    private bool hasWalkableArea;
+    private Rect walkableArea;
+
     void Awake()
     {
+        // Enforced here, like the camera's orthographic size, so a stale serialized 4.5 (from when the character
+        // was ~100x too big) in a scene or prefab can't bring the 16 m/s sprint back. See MovementMath.WalkSpeed.
+        moveSpeed = MovementMath.WalkSpeed;
+        acceleration = MovementMath.WalkSpeed / MovementMath.AccelerateSeconds;
+        deceleration = MovementMath.WalkSpeed / MovementMath.DecelerateSeconds;
+
         Rigidbody rb = GetComponent<Rigidbody>();
         if (rb != null)
         {
@@ -45,6 +57,9 @@ public class MaliGoPlayerController : MonoBehaviour
 
         if (visualController == null)
             visualController = GetComponentInChildren<PlayerCharacterVisualController>();
+
+        // Measured once per scene (cached in WalkableArea); false outside the town scene, then nothing is clamped.
+        hasWalkableArea = WalkableArea.TryGet(out walkableArea);
     }
 
     void Update()
@@ -84,6 +99,7 @@ public class MaliGoPlayerController : MonoBehaviour
         Vector3 targetVelocity = targetMoveDirection * moveSpeed;
         float rate = (input.sqrMagnitude > 0.01f) ? acceleration : deceleration;
         currentHorizontalVelocity = Vector3.MoveTowards(currentHorizontalVelocity, targetVelocity, rate * Time.deltaTime);
+        KeepInsideWalkableArea();
 
         // Grounding & Gravity
         if (characterController != null)
@@ -114,6 +130,28 @@ public class MaliGoPlayerController : MonoBehaviour
         {
             spriteController.UpdateAnimation(input, isMoving);
         }
+    }
+
+    /// <summary>
+    /// Stops the horizontal velocity at the edge of the built town (<see cref="WalkableArea"/>): per axis, a step
+    /// that would cross the edge is cut so it ends exactly on it, so walking diagonally into the edge slides along
+    /// it and walking straight into it stops (and the legs go idle) - no wall to bounce off, no jitter. Done on
+    /// the velocity before CharacterController.Move, never by setting transform.position, which the controller
+    /// would fight.
+    /// </summary>
+    private void KeepInsideWalkableArea()
+    {
+        float dt = Time.deltaTime;
+        if (!hasWalkableArea || dt <= 0f)
+        {
+            return;
+        }
+
+        Vector3 position = transform.position;
+        float stepX = MovementMath.ClampStep(position.x, currentHorizontalVelocity.x * dt, walkableArea.xMin, walkableArea.xMax);
+        float stepZ = MovementMath.ClampStep(position.z, currentHorizontalVelocity.z * dt, walkableArea.yMin, walkableArea.yMax);
+        currentHorizontalVelocity.x = stepX / dt;
+        currentHorizontalVelocity.z = stepZ / dt;
     }
 
     public Vector2 GetMovementInput()

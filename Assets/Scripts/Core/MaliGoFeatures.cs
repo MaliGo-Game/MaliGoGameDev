@@ -23,5 +23,10 @@ namespace MaliGo.Core
 
         /// <summary>Off: character creation skips the profile screen; the default profile (food + taxi) is kept.</summary>
         public static bool ProfileTaps = true;
+
+        /// <summary>The A/B switch for onboarding orientation. On: character creation runs in portrait (the soft
+        /// keyboard no longer covers the name field) and the app turns to landscape when the world opens. Off: the
+        /// whole app, onboarding included, stays landscape as before.</summary>
+        public static bool PortraitOnboarding = true;
     }
 }

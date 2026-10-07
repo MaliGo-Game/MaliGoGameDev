@@ -6,7 +6,8 @@ using UnityEngine.UI;
 namespace MaliGo.UI
 {
     /// <summary>
-    /// One-line notice (DESIGN_SPEC §5.4.12, sort 90): top-centre pill 96 u tall, 24 u below the safe top,
+    /// One-line notice (DESIGN_SPEC §5.4.12, sort 90): top-centre pill 96 u tall (wrapped and taller on a portrait
+    /// screen), 24 u below the safe top,
     /// <c>Inverse</c> fill, Body text in <c>TextOnInverse</c> beside the 48 u <c>information</c> icon. Shows for 6 s or
     /// until tapped, then fades out and destroys itself. Not modal. Used for the old-save notice (§2.6).
     /// </summary>
@@ -69,7 +70,19 @@ namespace MaliGo.UI
             label.horizontalOverflow = HorizontalWrapMode.Overflow;
             float textWidth = Mathf.Ceil(UiTextLayout.MeasureWidth(label, message));
             float width = Pad + IconSize + Gap + textWidth + Pad;
-            rect.sizeDelta = new Vector2(width, Height);
+            float height = Height;
+            // On a narrow (portrait onboarding) canvas the one line would run off the screen: wrap it instead, in
+            // a taller pill kept inside the screen margins.
+            float maxWidth = UiCanvasFactory.SafeAreaSize().x - 2f * UiTheme.ScreenMargin;
+            if (maxWidth > 0f && width > maxWidth)
+            {
+                width = maxWidth;
+                label.horizontalOverflow = HorizontalWrapMode.Wrap;
+                int lines = Mathf.Max(1, UiTextLayout.CountLines(label, message, width - Pad - IconSize - Gap - Pad));
+                height = Mathf.Max(Height, Mathf.Ceil(lines * UiTheme.Body.Size * UiTheme.Body.LineSpacing) + 2f * Gap);
+            }
+
+            rect.sizeDelta = new Vector2(width, height);
             label.rectTransform.offsetMin = new Vector2(Pad + IconSize + Gap, 0f);
             label.rectTransform.offsetMax = new Vector2(-Pad, 0f);
 

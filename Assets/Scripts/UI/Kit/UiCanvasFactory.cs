@@ -7,7 +7,9 @@ namespace MaliGo.UI.Kit
     /// Builds the one-canvas-per-layer setup every runtime view uses (DESIGN_SPEC §5.1 sort orders, §7.14):
     /// Screen Space Overlay, <c>CanvasScaler.ScaleWithScreenSize</c> at 1920 x 1080 with
     /// <c>matchWidthOrHeight = 1</c> (the canvas is always 1080 u tall), a <c>GraphicRaycaster</c>, and a
-    /// stretched "SafeArea" child carrying a <see cref="SafeAreaFitter"/>. Full-bleed backdrops go directly under
+    /// stretched "SafeArea" child carrying a <see cref="SafeAreaFitter"/>. A <see cref="CanvasOrientationScaler"/>
+    /// swaps the reference to 1080 x 1920 matching width while the screen is portrait (portrait onboarding), so the
+    /// canvas is then always 1080 u wide. Full-bleed backdrops go directly under
     /// the canvas (before the safe root); everything else goes under <c>safeRoot</c>.
     /// </summary>
     public static class UiCanvasFactory
@@ -36,6 +38,7 @@ namespace MaliGo.UI.Kit
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             scaler.matchWidthOrHeight = 1f;
             scaler.referencePixelsPerUnit = 100f;
+            canvasObject.AddComponent<CanvasOrientationScaler>().Apply(true);
 
             canvasObject.AddComponent<GraphicRaycaster>();
 
@@ -70,6 +73,24 @@ namespace MaliGo.UI.Kit
             image.sprite = UiKit.White;
             image.color = color;
             return image;
+        }
+
+        /// <summary>True while the screen is taller than it is wide.</summary>
+        public static bool ScreenIsPortrait => Screen.height > Screen.width;
+
+        /// <summary>Canvas units per screen pixel for a factory canvas: the short side is always 1080 u (see
+        /// <see cref="CanvasOrientationScaler"/>).</summary>
+        public static float UnitsPerPixel => UiTheme.ReferenceHeight / Mathf.Max(1, Mathf.Min(Screen.width, Screen.height));
+
+        /// <summary>The size in u of <c>Screen.safeArea</c> on a factory canvas, i.e. the size of its safe root.</summary>
+        public static Vector2 SafeAreaSize()
+        {
+            Rect safe = Screen.safeArea;
+            if (safe.width <= 0f || safe.height <= 0f)
+            {
+                safe = new Rect(0f, 0f, Screen.width, Screen.height);
+            }
+            return safe.size * UnitsPerPixel;
         }
 
         static int LayerUi()

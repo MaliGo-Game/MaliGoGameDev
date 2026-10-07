@@ -56,6 +56,39 @@ design gets worked out before it's ported.
   The no-streaks, no-score, hidden-archetype design choices above are
   direct consequences of this research, not arbitrary.
 
+## Versioning
+
+MaliGo follows [Semantic Versioning 2.0.0](https://semver.org): `MAJOR.MINOR.PATCH`,
+with a `-beta.N` pre-release tag on every tester build. The version lives in one
+place, the [`VERSION`](VERSION) file at the repo root (e.g. `0.3.0-beta.1`). The
+build reads it, the APK is also saved as `Builds/Android/MaliGo-<version>.apk`,
+and the game shows `v<version>` at the bottom of the screen, so every screenshot
+or bug report says which build it came from.
+
+**Rules**
+
+1. **Every build that leaves your machine gets a new version.** Never send two
+   different APKs with the same version. Bump before you build:
+   `python tools/bump_version.py beta` (`0.3.0-beta.1` -> `0.3.0-beta.2`).
+2. **PATCH** (`0.3.0` -> `0.3.1`): bug fixes only, nothing new for players.
+   `python tools/bump_version.py patch`
+3. **MINOR** (`0.3.x` -> `0.4.0`): new features or content (a new chapter,
+   scenarios, screens). `python tools/bump_version.py minor`
+4. **MAJOR** stays `0` while the game is in beta; anything can still change.
+   `1.0.0` is the first public store release. After that, MAJOR goes up only
+   when old saves stop working or the game changes in a way players must relearn.
+5. A new PATCH, MINOR or MAJOR starts again at `-beta.1`. Dropping the tag
+   (`python tools/bump_version.py release`) is for a build going to the store.
+6. Commit the `VERSION` change with the code it describes, and tag shipped
+   builds: `git tag v0.3.0-beta.2`.
+
+**Android versionCode** is worked out from the version, so it always goes up and
+Android installs a new beta over an old one:
+`major*1,000,000 + minor*10,000 + patch*100 + beta` (a release counts as beta 99,
+so it sorts after its betas). `0.3.0-beta.1` -> `30001`. That is why MINOR,
+PATCH and the beta number each stay below 100. `python tools/bump_version.py`
+with no argument prints the current version and its code.
+
 ## Requirements
 
 - Unity **6000.3.0f1** (Unity 6.3 LTS), URP, DX11

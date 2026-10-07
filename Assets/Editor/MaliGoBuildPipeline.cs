@@ -59,6 +59,11 @@ public static class MaliGoBuildPipeline
 
         if (summary.result == BuildResult.Succeeded)
         {
+            // A copy named after the version (e.g. MaliGo-0.3.0-beta.1.apk), so files sent to testers say
+            // which build they are.
+            string versioned = Path.Combine(outputDir ?? "", $"MaliGo-{PlayerSettings.bundleVersion}.apk");
+            File.Copy(ApkOutputPath, versioned, true);
+            Debug.Log($"[MaliGoBuildPipeline] Version {PlayerSettings.bundleVersion} ({PlayerSettings.Android.bundleVersionCode}), copy at {versioned}");
             Debug.Log($"[MaliGoBuildPipeline] BUILD SUCCEEDED: {summary.outputPath}\n" +
                       $"Size: {summary.totalSize / (1024f * 1024f):0.0} MB\n" +
                       $"Time: {summary.totalTime}\n" +

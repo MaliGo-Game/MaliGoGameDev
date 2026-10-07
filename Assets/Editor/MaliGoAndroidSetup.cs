@@ -23,9 +23,9 @@ public static class MaliGoAndroidSetup
     const string JdkPath = @"C:\JDK17";
     static readonly string NdkPath = System.IO.Path.Combine(SdkPath, "ndk", "27.2.12479018");
 
-    // App version (DESIGN_SPEC §0): 0.2.0 / code 2 installs over the testers' 1.0 / code 1.
-    public const string AppVersion = "0.2.0";
-    public const int AppVersionCode = 2;
+    // App version: from the VERSION file (see MaliGoVersion and README "Versioning").
+    public static string AppVersion => MaliGoVersion.Name;
+    public static int AppVersionCode => MaliGoVersion.Code;
 
     // App icon layers (DESIGN_SPEC §6.6), made by tools/make_app_icon.py.
     const string IconBackgroundPath = "Assets/MaliGo/Branding/AppIcon_Background.png";
@@ -69,7 +69,7 @@ public static class MaliGoAndroidSetup
         PlayerSettings.allowedAutorotateToPortrait = false;
         PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
 
-        // Always set (never "keep if already set"), so every build is 0.2.0 / code 2.
+        // Always set from VERSION (never "keep if already set"), so the APK matches the file.
         PlayerSettings.bundleVersion = AppVersion;
         PlayerSettings.Android.bundleVersionCode = AppVersionCode;
 

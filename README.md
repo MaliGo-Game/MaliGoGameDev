@@ -60,10 +60,14 @@ design gets worked out before it's ported.
 
 MaliGo follows [Semantic Versioning 2.0.0](https://semver.org): `MAJOR.MINOR.PATCH`,
 with a `-beta.N` pre-release tag on every tester build. The version lives in one
-place, the [`VERSION`](VERSION) file at the repo root (e.g. `0.3.0-beta.1`). The
+place, the [`VERSION.txt`](VERSION.txt) file at the repo root (e.g. `0.3.0-beta.1`). The
 build reads it, the APK is also saved as `Builds/Android/MaliGo-<version>.apk`,
 and the game shows `v<version>` at the bottom of the screen, so every screenshot
 or bug report says which build it came from.
+
+The file is `VERSION.txt`, not `VERSION`: Windows ignores case, so a file named
+`version` in the project root replaces the C++ `<version>` header during the
+IL2CPP build and the build fails.
 
 **Rules**
 
@@ -79,7 +83,7 @@ or bug report says which build it came from.
    when old saves stop working or the game changes in a way players must relearn.
 5. A new PATCH, MINOR or MAJOR starts again at `-beta.1`. Dropping the tag
    (`python tools/bump_version.py release`) is for a build going to the store.
-6. Commit the `VERSION` change with the code it describes, and tag shipped
+6. Commit the `VERSION.txt` change with the code it describes, and tag shipped
    builds: `git tag v0.3.0-beta.2`.
 
 **Android versionCode** is worked out from the version, so it always goes up and

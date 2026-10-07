@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 using UnityEngine;
 
 /// <summary>
-/// Reads the app version from the VERSION file at the repo root (Semantic Versioning 2.0.0, see README
+/// Reads the app version from the VERSION.txt file at the repo root (Semantic Versioning 2.0.0, see README
 /// "Versioning") and derives the Android versionCode from it, so every tester build has a distinct name and
 /// a code that only ever goes up. Bump the file with tools/bump_version.py.
 /// </summary>
@@ -12,7 +12,7 @@ public static class MaliGoVersion
 {
     static readonly Regex Pattern = new Regex(@"^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$");
 
-    /// <summary>The VERSION file's text, e.g. "0.3.0-beta.1".</summary>
+    /// <summary>The VERSION.txt file's text, e.g. "0.3.0-beta.1".</summary>
     public static string Name => Read().name;
 
     /// <summary>major*1,000,000 + minor*10,000 + patch*100 + beta number; a release (no -beta) uses 99, so it
@@ -21,7 +21,7 @@ public static class MaliGoVersion
 
     static (string name, int code) Read()
     {
-        string path = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "VERSION");
+        string path = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "VERSION.txt");
         string name = File.Exists(path) ? File.ReadAllText(path).Trim() : "";
         Match m = Pattern.Match(name);
         if (!m.Success)

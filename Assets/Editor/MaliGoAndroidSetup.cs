@@ -23,7 +23,7 @@ public static class MaliGoAndroidSetup
     const string JdkPath = @"C:\JDK17";
     static readonly string NdkPath = System.IO.Path.Combine(SdkPath, "ndk", "27.2.12479018");
 
-    // App version: from the VERSION file (see MaliGoVersion and README "Versioning").
+    // App version: from the VERSION.txt file (see MaliGoVersion and README "Versioning").
     public static string AppVersion => MaliGoVersion.Name;
     public static int AppVersionCode => MaliGoVersion.Code;
 
@@ -72,7 +72,7 @@ public static class MaliGoAndroidSetup
         PlayerSettings.allowedAutorotateToPortrait = true;
         PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
 
-        // Always set from VERSION (never "keep if already set"), so the APK matches the file.
+        // Always set from VERSION.txt (never "keep if already set"), so the APK matches the file.
         PlayerSettings.bundleVersion = AppVersion;
         PlayerSettings.Android.bundleVersionCode = AppVersionCode;
 

@@ -7,7 +7,7 @@ namespace MaliGo.UI
     /// <summary>
     /// A small "v0.3.0-beta.1" label at the bottom centre of every screen, so testers' screenshots say which
     /// build they came from (README "Versioning"). <c>Application.version</c> is the Android versionName,
-    /// set from the VERSION file at build time. Created once on boot and kept across scenes; it never takes
+    /// set from VERSION.txt at build time. Created once on boot and kept across scenes; it never takes
     /// touches.
     /// </summary>
     public class VersionStamp : MonoBehaviour

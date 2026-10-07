@@ -1,4 +1,4 @@
-"""Bump the VERSION file (Semantic Versioning 2.0.0, see README "Versioning").
+"""Bump the VERSION.txt file (Semantic Versioning 2.0.0, see README "Versioning").
 
     python tools/bump_version.py beta    # 0.3.0-beta.1 -> 0.3.0-beta.2   (every tester build)
     python tools/bump_version.py patch   # 0.3.0-beta.2 -> 0.3.1-beta.1   (bug-fix line)
@@ -11,7 +11,7 @@ import pathlib
 import re
 import sys
 
-FILE = pathlib.Path(__file__).resolve().parent.parent / "VERSION"
+FILE = pathlib.Path(__file__).resolve().parent.parent / "VERSION.txt"
 PATTERN = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$")
 
 

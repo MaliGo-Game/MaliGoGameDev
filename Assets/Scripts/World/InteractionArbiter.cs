@@ -8,10 +8,10 @@ namespace MaliGo.World
     /// <summary>
     /// One prompt, one tap target, the right thing happens (DESIGN_SPEC §7.1, D12).
     ///
-    /// The registry is static so scene objects (Mali) can register in <c>OnEnable</c> before the bootstrap creates
+    /// The registry is static so scene objects can register in <c>OnEnable</c> before the bootstrap creates
     /// the arbiter. Every frame the arbiter drops destroyed entries, then picks the nearest available World
-    /// interactable within its radius of the player; Mali only when nothing else is near and the player has stood
-    /// still for 0.6 s. Nothing is current while any modal is open. A tap (prompt or action button, via
+    /// interactable within its radius of the player; a Companion only when nothing else is near and the player has
+    /// stood still for 0.6 s (Mali is not registered: she is talked to from the HUD). Nothing is current while any modal is open. A tap (prompt or action button, via
     /// <see cref="RequestInteract"/>) or E calls the current one's <c>Interact</c>, or <c>OnDisabledTap</c> when it is
     /// greyed out. The request is cleared every frame whether or not anything used it.
     /// </summary>

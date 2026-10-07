@@ -2,7 +2,9 @@ using UnityEngine;
 
 namespace MaliGo.World
 {
-    /// <summary>World things compete for the one prompt by priority: any World candidate in range beats Mali.</summary>
+    /// <summary>World things compete for the one prompt by priority: any World candidate in range beats a Companion.
+    /// Mali herself is no longer an interactable (she is docked in the HUD, see <c>MaliCompanionInteraction</c>);
+    /// Companion is kept for anything that follows the player in future.</summary>
     public enum InteractPriority
     {
         World = 0,
@@ -10,7 +12,8 @@ namespace MaliGo.World
     }
 
     /// <summary>
-    /// Something the player can walk up to and use (DESIGN_SPEC §7.1): Home, Bank, Work, a scenario spot or Mali.
+    /// Something the player can walk up to and use (DESIGN_SPEC §7.1): Home, Bank, Work or a scenario spot.
+    /// (Talking to Mali goes through the HUD Talk button instead, so it never needs a walk.)
     /// Implementations register with <see cref="InteractionArbiter.Register"/> in <c>OnEnable</c> and unregister in
     /// <c>OnDisable</c>. They never poll input or build prompt UI themselves: the arbiter picks one current
     /// interactable, <c>WorldPromptView</c> shows it and the arbiter calls <see cref="Interact"/> or
@@ -20,7 +23,7 @@ namespace MaliGo.World
     {
         Vector3 InteractPosition { get; }
 
-        /// <summary>0.7 world units; Mali 0.74.</summary>
+        /// <summary>0.7 world units.</summary>
         float InteractRadius { get; }
 
         InteractPriority Priority { get; }

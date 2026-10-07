@@ -1,3 +1,4 @@
+using MaliGo.Characters;
 using MaliGo.UI.Kit;
 using MaliGo.World;
 using UnityEngine;
@@ -7,22 +8,43 @@ using UnityEngine.UI;
 namespace MaliGo.UI
 {
     /// <summary>
-    /// On-screen joystick (bottom-left) and action button (bottom-right) for touch (DESIGN_SPEC §5.4.2, sort 25).
-    /// The joystick feeds <c>MaliGoPlayerController.SetVirtualJoystickInput</c>; the action button asks the
-    /// <see cref="InteractionArbiter"/> to interact and shows the current interactable's verb ("Open", "Look",
-    /// "Work", "Talk"), dimmed to 40% with no label when there is nothing to use. Both hide (alpha 0, not
-    /// interactable) while any modal is open (§7.2). The joystick is reset when hidden, on pause, on focus loss and
-    /// on disable. Anchors: <c>controls.joystick</c>, <c>controls.act</c>.
+    /// On-screen joystick (bottom-left) and the combined action / Talk button (bottom-right) for touch
+    /// (DESIGN_SPEC §5.4.2, sort 25), with Mali docked on top of the button.
+    ///
+    /// The joystick feeds <c>MaliGoPlayerController.SetVirtualJoystickInput</c>. The gold button has one job at a
+    /// time: when the <see cref="InteractionArbiter"/> offers something in the world it shows that interactable's
+    /// verb ("Open", "Look", "Work") and a tap asks the arbiter to interact; otherwise it is Mali's Talk button. It
+    /// is a compact round "Talk", and widens to the left into a "Talk to Mali" pill while
+    /// <see cref="MaliCompanionInteraction.HasSomethingToSay"/> is true (UiTween, instant with reduce motion). With
+    /// neither a world target nor Mali it is dimmed to 40% with no label.
+    ///
+    /// Mali's portrait sits on top of the button's round end (the right end, which never moves) with a slow idle
+    /// bob (off with reduce motion); tapping her also talks to her. Her dialogue box points its tail at this dock
+    /// (<c>MaliDialogueView</c> reads the <c>controls.mali</c> anchor).
+    ///
+    /// Everything hides (alpha 0, not interactable) while any modal is open (§7.2). The joystick is reset when
+    /// hidden, on pause, on focus loss and on disable. Anchors: <c>controls.joystick</c>, <c>controls.act</c>,
+    /// <c>controls.mali</c>.
     /// </summary>
     public class MobileControlsUI : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
     {
         public const string AnchorJoystick = "controls.joystick";
         public const string AnchorAct = "controls.act";
+        public const string AnchorMali = "controls.mali";
+
+        public const string TalkLabel = "Talk";
+        public const string TalkToMaliLabel = "Talk to Mali";
 
         const float BaseDiameter = 240f;
         const float HandleDiameter = 104f;
         const float ActionDiameter = 168f;
         const float CornerOffset = 190f;
+        const float PillPadding = 44f;
+        const float ResizeSeconds = 0.22f;
+        const float DockSize = 132f;
+        const float DockSink = 28f;     // how far Mali's portrait overlaps the top of the button
+        const float DockBobDistance = 4f;
+        const float DockBobPeriod = 2.4f;
 
         static readonly Color BaseColor = UiTheme.WithAlpha(UiTheme.Inverse, 0.45f);
         static readonly Color HandleColor = UiTheme.WithAlpha(UiTheme.TextOnInverse, 0.75f);
@@ -35,9 +57,17 @@ namespace MaliGo.UI
         RectTransform actionRect;
         CanvasGroup actionGroup;
         Text actionLabel;
+        RectTransform maliDock;
+        RectTransform maliFigure;
+        Vector2 maliFigureRest;
+        bool maliBobbing;
         int activeJoystickPointerId = int.MinValue;
         bool hidden;
-        string lastVerb;
+        string lastLabel;
+        bool lastDimmed;
+        bool lastExpanded;
+        bool lastDockShown;
+        float targetWidth = ActionDiameter;
 
         MaliGoPlayerController cachedPlayerController;
 
@@ -52,6 +82,7 @@ namespace MaliGo.UI
             {
                 UiAnchors.Register(AnchorJoystick, joystickBase);
                 UiAnchors.Register(AnchorAct, actionRect);
+                UiAnchors.Register(AnchorMali, maliDock);
             }
         }
 
@@ -60,6 +91,14 @@ namespace MaliGo.UI
             ResetJoystick();
             UiAnchors.Unregister(AnchorJoystick, joystickBase);
             UiAnchors.Unregister(AnchorAct, actionRect);
+            UiAnchors.Unregister(AnchorMali, maliDock);
+        }
+
+        void OnDestroy()
+        {
+            UiTween.Stop(actionRect);
+            UiTween.Stop(actionLabel);
+            UiTween.Stop(maliFigure);
         }
 
         void OnApplicationPause(bool paused)
@@ -102,25 +141,123 @@ namespace MaliGo.UI
             RefreshActionButton();
         }
 
-        void RefreshActionButton()
+        /// <summary>The arbiter's live current interactable, or null.</summary>
+        static IInteractable WorldTarget()
         {
             InteractionArbiter arbiter = InteractionArbiter.Instance;
             IInteractable current = arbiter != null ? arbiter.Current : null;
-            if (current != null && (current as Object) == null)
+            return current != null && (current as Object) != null ? current : null;
+        }
+
+        /// <summary>Mali when she can be talked to, or null.</summary>
+        static MaliCompanionInteraction Companion()
+        {
+            MaliCompanionInteraction companion = MaliCompanionInteraction.Instance;
+            return companion != null && companion.IsAvailable ? companion : null;
+        }
+
+        void RefreshActionButton()
+        {
+            IInteractable world = WorldTarget();
+            MaliCompanionInteraction companion = Companion();
+
+            string label;
+            bool expanded = false;
+            if (world != null)
             {
-                current = null;
+                label = world.ActionVerb ?? "";
+            }
+            else if (companion != null)
+            {
+                expanded = companion.HasSomethingToSay;
+                label = expanded ? TalkToMaliLabel : TalkLabel;
+            }
+            else
+            {
+                label = "";
             }
 
-            string verb = current != null ? current.ActionVerb ?? "" : "";
-            if (verb == lastVerb)
+            bool dimmed = world == null && companion == null;
+            RefreshDock(companion != null);
+
+            if (label == lastLabel && dimmed == lastDimmed && expanded == lastExpanded)
             {
                 return;
             }
 
-            lastVerb = verb;
-            actionLabel.text = verb;
-            actionLabel.gameObject.SetActive(current != null);
-            actionGroup.alpha = current != null ? 1f : 0.4f;
+            bool expanding = expanded && !lastExpanded;
+            lastLabel = label;
+            lastDimmed = dimmed;
+            lastExpanded = expanded;
+
+            actionLabel.text = label;
+            actionLabel.gameObject.SetActive(!dimmed);
+            actionGroup.alpha = dimmed ? 0.4f : 1f;
+            Resize(expanded ? PillWidth(label) : ActionDiameter, expanding);
+        }
+
+        float PillWidth(string label)
+        {
+            return Mathf.Max(ActionDiameter, UiTextLayout.MeasureWidth(actionLabel, label) + PillPadding * 2f);
+        }
+
+        /// <summary>
+        /// Widens or narrows the button towards <paramref name="width"/> (its right end stays put). Expanding hides
+        /// the longer label until the pill is wide enough, then fades it in; any other change shows it at once.
+        /// </summary>
+        void Resize(float width, bool expanding)
+        {
+            UiTween.Stop(actionLabel);
+            if (Mathf.Abs(width - targetWidth) < 0.5f && Mathf.Abs(actionRect.sizeDelta.x - width) < 0.5f)
+            {
+                SetLabelAlpha(1f);
+                return;
+            }
+
+            SetLabelAlpha(expanding ? 0f : 1f);
+            targetWidth = width;
+            float from = actionRect.sizeDelta.x;
+            UiTween.CountUp(actionRect, from, width,
+                value => actionRect.sizeDelta = new Vector2(value, ActionDiameter),
+                ResizeSeconds,
+                () =>
+                {
+                    if (expanding)
+                    {
+                        UiTween.Fade(actionLabel, 1f, UiTheme.Motion.Fade);
+                    }
+                });
+        }
+
+        void SetLabelAlpha(float alpha)
+        {
+            Color c = actionLabel.color;
+            c.a = alpha;
+            actionLabel.color = c;
+        }
+
+        /// <summary>Shows Mali's dock while she is around, and keeps her idle bob in step with reduce motion.</summary>
+        void RefreshDock(bool shown)
+        {
+            if (shown != lastDockShown)
+            {
+                lastDockShown = shown;
+                maliDock.gameObject.SetActive(shown);
+            }
+
+            bool bob = shown && !UiTween.ReduceMotion;
+            if (bob == maliBobbing)
+            {
+                return;
+            }
+
+            maliBobbing = bob;
+            UiTween.Stop(maliFigure);
+            maliFigure.anchoredPosition = maliFigureRest;
+            if (bob)
+            {
+                UiTween.Bob(maliFigure, DockBobDistance, DockBobPeriod);
+            }
         }
 
         // ================================================================ joystick
@@ -199,7 +336,21 @@ namespace MaliGo.UI
                 return;
             }
 
-            MobileInputBridge.RequestInteract();
+            if (WorldTarget() != null)
+            {
+                MobileInputBridge.RequestInteract();
+                return;
+            }
+
+            Companion()?.Talk();
+        }
+
+        void OnMaliPressed()
+        {
+            if (!hidden)
+            {
+                Companion()?.Talk();
+            }
         }
 
         // ================================================================ build
@@ -225,12 +376,16 @@ namespace MaliGo.UI
 
         void BuildActionButton(RectTransform parent)
         {
+            // Pivot on the right end so the pill grows to the left and the round end (under Mali) never moves.
             actionRect = CreateCircle(parent, "ActionButton", ButtonColor, ActionDiameter, new Vector2(1f, 0f),
-                new Vector2(-CornerOffset, CornerOffset));
+                new Vector2(-CornerOffset + ActionDiameter * 0.5f, CornerOffset));
+            actionRect.pivot = new Vector2(1f, 0.5f);
+            Image background = actionRect.GetComponent<Image>();
+            UiKit.SetRadius(background, UiTheme.RadiusPill(ActionDiameter));
             actionGroup = actionRect.gameObject.AddComponent<CanvasGroup>();
 
             var button = actionRect.gameObject.AddComponent<Button>();
-            button.targetGraphic = actionRect.GetComponent<Image>();
+            button.targetGraphic = background;
             var navigation = button.navigation;
             navigation.mode = Navigation.Mode.None;
             button.navigation = navigation;
@@ -245,7 +400,43 @@ namespace MaliGo.UI
             actionLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
             actionLabel.gameObject.SetActive(false);
             actionGroup.alpha = 0.4f;
-            lastVerb = "";
+            lastLabel = "";
+            lastDimmed = true;
+            targetWidth = ActionDiameter;
+
+            BuildMaliDock(parent);
+        }
+
+        /// <summary>Mali's portrait sitting on the button's round end, drawn in front of it; a tap on her talks
+        /// to her.</summary>
+        void BuildMaliDock(RectTransform parent)
+        {
+            maliDock = UiKit.Rect(parent, "MaliDock");
+            maliDock.anchorMin = maliDock.anchorMax = new Vector2(1f, 0f);
+            maliDock.pivot = new Vector2(0.5f, 0f);
+            maliDock.sizeDelta = new Vector2(DockSize, DockSize);
+            maliDock.anchoredPosition = new Vector2(-CornerOffset, CornerOffset + ActionDiameter * 0.5f - DockSink);
+            maliDock.SetAsLastSibling();
+
+            Image figure = UiKit.SpriteImage(maliDock, "Mali", UiKit.MaliPortrait, DockSize, Color.white);
+            figure.raycastTarget = figure.sprite != null;
+            maliFigure = figure.rectTransform;
+            maliFigureRest = maliFigure.anchoredPosition;
+
+            var button = figure.gameObject.AddComponent<Button>();
+            button.targetGraphic = figure;
+            button.transition = Selectable.Transition.None;
+            var navigation = button.navigation;
+            navigation.mode = Navigation.Mode.None;
+            button.navigation = navigation;
+            button.onClick.AddListener(() =>
+            {
+                UiKit.NotifyButtonClicked();
+                OnMaliPressed();
+            });
+
+            maliDock.gameObject.SetActive(false);
+            lastDockShown = false;
         }
 
         static RectTransform CreateCircle(RectTransform parent, string name, Color color, float diameter, Vector2 anchor,

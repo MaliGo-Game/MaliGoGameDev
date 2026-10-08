@@ -19,8 +19,9 @@ namespace MaliGo.PlayerIdentity
     /// the two profile taps.
     /// 1 the promise and the name (Next disabled while the name is empty; the old-save notice when
     ///   <c>PlayerDataManager.WasResetForUpdate</c>, then the flag is cleared);
-    /// 2 "Pick your look": six looks (two builds x light/medium/deep) beside (landscape) or under (portrait) a
-    ///   turning <see cref="LookPreview"/>;
+    /// 2 "Pick your look": a character (six outfit cards, each with its portrait from <see cref="LookThumbnails"/>
+    ///   and a style name; everyone sees every character) and a skin tone (six swatches), beside (landscape) or
+    ///   under (portrait) a turning <see cref="LookPreview"/> that follows both picks (<see cref="CharacterLooks"/>);
     /// 3 the two profile taps, then "We've built your week around where your money goes." and the first three
     ///   places from <c>ChapterSchedule.WeekPlaces</c>; Next needs a pick in both rows and runs
     ///   <c>SpendingProfiles.SetFromOnboarding</c> (skipped when <c>MaliGoFeatures.ProfileTaps</c> is off: the
@@ -87,20 +88,25 @@ namespace MaliGo.PlayerIdentity
         // before the flow goes on regardless; in the Editor the screen never turns.
         const float RotateTimeout = 1.5f;
 
-        static readonly string[] SkinTones = { "light", "medium", "deep" };
-        static readonly Color[] ToneSwatches =
-        {
-            new Color(198f / 255f, 140f / 255f, 100f / 255f),
-            new Color(150f / 255f, 96f / 255f, 62f / 255f),
-            new Color(96f / 255f, 60f / 255f, 40f / 255f)
-        };
+        // Look screen: the turning preview, a 3 x 2 grid of character cards and a row of six skin-tone swatches.
+        const int OutfitColumns = 3;
+        const float LookPreviewLandscape = 460f;
+        const float OutfitCardHeightTall = 300f;
+        const float ThumbnailInset = 16f;
+        const float OutfitLabelBottom = 14f;
+        const float OutfitLabelHeight = 44f;
+        const float SwatchRowHeight = UiTheme.TargetMin;
+        const float SwatchSize = 80f;
+        const float SwatchRingSize = 108f;
+        const float SwatchGapRingSize = 94f;
 
         readonly List<int> screens = new List<int>();
         int screenIndex;
 
         PlayerData draft;
         string draftName = "";
-        int lookIndex;
+        int outfitIndex;
+        int toneIndex = CharacterLooks.FindTone(CharacterLooks.DefaultToneId);
         string focusPick;
         string travelPick;
         string goalPick;
@@ -115,9 +121,11 @@ namespace MaliGo.PlayerIdentity
         Button letsGoButton;
         InputField nameInput;
         LookPreview lookPreview;
+        LookThumbnails lookThumbnails;
         PlayerCharacterCatalog catalog;
         bool catalogLoaded;
         readonly List<CardView> lookCards = new List<CardView>();
+        readonly List<SwatchView> toneSwatches = new List<SwatchView>();
         readonly List<CardView> focusCards = new List<CardView>();
         readonly List<CardView> travelCards = new List<CardView>();
         readonly List<CardView> goalCards = new List<CardView>();
@@ -371,6 +379,8 @@ namespace MaliGo.PlayerIdentity
         void ClearContent()
         {
             lookCards.Clear();
+            toneSwatches.Clear();
+            lookThumbnails = null;
             focusCards.Clear();
             travelCards.Clear();
             goalCards.Clear();
@@ -451,7 +461,7 @@ namespace MaliGo.PlayerIdentity
                     draft.characterName = draftName;
                     break;
                 case ScreenLook:
-                    draft.appearance = AppearanceFor(lookIndex);
+                    draft.appearance = CurrentLook();
                     break;
                 case ScreenBank:
                     if (bankPending == null)
@@ -503,16 +513,8 @@ namespace MaliGo.PlayerIdentity
             return name;
         }
 
-        /// <summary>Style 1-3: feminine light/medium/deep; Style 4-6: masculine light/medium/deep (§4.6).</summary>
-        public static AppearanceData AppearanceFor(int lookIndex)
-        {
-            int i = Mathf.Clamp(lookIndex, 0, 5);
-            return new AppearanceData
-            {
-                genderPresentation = i < 3 ? "feminine" : "masculine",
-                skinTone = SkinTones[i % 3]
-            };
-        }
+        /// <summary>The picked character card in the picked skin tone (<see cref="CharacterLooks"/>).</summary>
+        AppearanceData CurrentLook() => CharacterLooks.Create(outfitIndex, toneIndex);
 
         void Complete()
         {
@@ -527,7 +529,7 @@ namespace MaliGo.PlayerIdentity
                 draft.characterName = draftName;
             }
 
-            draft.appearance ??= AppearanceFor(lookIndex);
+            draft.appearance ??= CurrentLook();
             if (draft.goals == null || draft.goals.Length == 0)
             {
                 draft.goals = new[] { GoalPresets.CreateGoal(goalPick) };
@@ -780,78 +782,158 @@ namespace MaliGo.PlayerIdentity
                 }
             }
 
-            lookPreview = LookPreview.Create(content, catalog, AppearanceFor(lookIndex));
-            const float cardH = 160f;
+            AppearanceData look = CurrentLook();
+            lookPreview = LookPreview.Create(content, catalog, look);
+            int outfitCount = CharacterLooks.Outfits.Length;
+            int rows = (outfitCount + OutfitColumns - 1) / OutfitColumns;
             float cardW;
+            float cardH;
             float gridX;
             float gridY;
+            float columnX;
+            float columnW;
+            float swatchY;
             if (portraitLayout)
             {
-                // One column: the turning model above the six looks, both centred. The model shrinks (to half
-                // size at most) if a short screen cannot fit it above the cards.
-                cardW = Mathf.Floor((ContentWidth - 2f * CardGap) / 3f);
-                float gridW = 3f * cardW + 2f * CardGap;
-                float gridH = 2f * cardH + CardGap;
+                // One column: the turning model, the character cards, then the skin tones, all centred. The model
+                // shrinks (to half size at most) on a short screen, and the cards give up some height after it.
+                columnW = ContentWidth;
+                columnX = Margin;
+                cardW = Mathf.Floor((columnW - (OutfitColumns - 1) * CardGap) / OutfitColumns);
+                cardH = Mathf.Min(OutfitCardHeightTall, Mathf.Floor(cardW * 1.1f));
                 float y = titleBottom + 32f;
+                float below = UiTheme.Space40 + UiTheme.Space30 + SwatchRowHeight;
+                float room = PortraitContentBottom - y - below - (rows * cardH + (rows - 1) * CardGap);
+                float minPreview = LookPreview.ImageSize * 0.5f;
+                if (room < minPreview)
+                {
+                    cardH = Mathf.Max(180f, cardH - Mathf.Ceil((minPreview - room) / rows));
+                    room = PortraitContentBottom - y - below - (rows * cardH + (rows - 1) * CardGap);
+                }
+
                 if (lookPreview != null)
                 {
-                    float room = PortraitContentBottom - y - UiTheme.Space40 - gridH;
-                    float size = Mathf.Clamp(Mathf.Min(room, ContentWidth), LookPreview.ImageSize * 0.5f,
-                        LookPreview.ImageSize);
+                    float size = Mathf.Clamp(Mathf.Min(room, ContentWidth), minPreview, LookPreview.ImageSize);
                     SetTopLeft(lookPreview.Rect, (sheetWidth - size) * 0.5f, y, size, size);
                     y += size + UiTheme.Space40;
                 }
 
-                gridX = (sheetWidth - gridW) * 0.5f;
+                gridX = columnX + (columnW - (OutfitColumns * cardW + (OutfitColumns - 1) * CardGap)) * 0.5f;
                 gridY = y;
+                swatchY = gridY + rows * cardH + (rows - 1) * CardGap + UiTheme.Space30;
             }
             else
             {
-                cardW = 246f;
-                float gridW = 3f * cardW + 2f * CardGap;
-                float gridH = 2f * cardH + CardGap;
+                // The model on the left; on the right the cards over the swatch row, inside the model's height.
+                const float top = 128f;
+                const float bottom = top + LookPreview.ImageSize;
+                columnW = TextWidth - LookPreviewLandscape - UiTheme.Space40;
                 if (lookPreview != null)
                 {
-                    SetTopLeft(lookPreview.Rect, Margin, 128f, LookPreview.ImageSize, LookPreview.ImageSize);
-                    gridX = SheetWidth - Margin - gridW;
+                    SetTopLeft(lookPreview.Rect, Margin, top + (LookPreview.ImageSize - LookPreviewLandscape) * 0.5f,
+                        LookPreviewLandscape, LookPreviewLandscape);
+                    columnX = SheetWidth - Margin - columnW;
                 }
                 else
                 {
-                    gridX = (SheetWidth - gridW) * 0.5f;
+                    columnX = (SheetWidth - columnW) * 0.5f;
                 }
 
-                gridY = 128f + (LookPreview.ImageSize - gridH) * 0.5f;
+                swatchY = bottom - SwatchRowHeight;
+                cardW = Mathf.Floor((columnW - (OutfitColumns - 1) * CardGap) / OutfitColumns);
+                cardH = Mathf.Floor((swatchY - UiTheme.Space20 - top - (rows - 1) * CardGap) / rows);
+                gridX = columnX;
+                gridY = top;
             }
 
-            for (int i = 0; i < 6; i++)
+            // The portraits: one strip drawn by LookThumbnails, one cell per card, cropped just above each label.
+            float thumbW = cardW - 2f * ThumbnailInset;
+            float thumbH = Mathf.Max(1f, cardH - ThumbnailInset - OutfitLabelBottom - OutfitLabelHeight);
+            lookThumbnails = LookThumbnails.Create(content, catalog, thumbW / thumbH, 0f, look);
+
+            for (int i = 0; i < outfitCount; i++)
             {
                 int index = i;
-                float x = gridX + (i % 3) * (cardW + CardGap);
-                float y = gridY + (i / 3) * (cardH + CardGap);
-                CardView card = CardView.Create(content, "Look " + (i + 1), x, y, cardW, cardH, () => PickLook(index));
+                float x = gridX + (i % OutfitColumns) * (cardW + CardGap);
+                float y = gridY + (i / OutfitColumns) * (cardH + CardGap);
+                CharacterLooks.Outfit outfit = CharacterLooks.Outfits[i];
+                CardView card = CardView.Create(content, "Character " + outfit.id, x, y, cardW, cardH,
+                    () => PickOutfit(index));
 
-                Image swatch = UiKit.SpriteImage(card.Body, "Swatch", UiKit.Circle, 48f, ToneSwatches[i % 3]);
-                RectTransform swatchRect = swatch.rectTransform;
-                swatchRect.anchorMin = swatchRect.anchorMax = swatchRect.pivot = new Vector2(0.5f, 1f);
-                swatchRect.anchoredPosition = new Vector2(0f, -28f);
+                if (lookThumbnails != null)
+                {
+                    var portraitObject = new GameObject("Portrait", typeof(RectTransform));
+                    portraitObject.layer = card.Body.gameObject.layer;
+                    var portraitRect = (RectTransform)portraitObject.transform;
+                    portraitRect.SetParent(card.Body, false);
+                    SetTopLeft(portraitRect, ThumbnailInset, ThumbnailInset, thumbW, thumbH);
+                    var portrait = portraitObject.AddComponent<RawImage>();
+                    portrait.texture = lookThumbnails.Texture;
+                    portrait.uvRect = lookThumbnails.UvRect(i);
+                    portrait.raycastTarget = false;
+                }
 
-                Text label = UiKit.Label(card.Body, "Label", OnboardingCopy.StyleLabel(i + 1), UiTheme.Label,
-                    UiTheme.TextPrimary, TextAnchor.MiddleCenter);
-                SetBottomStretch(label.rectTransform, 24f, 44f);
+                Text label = UiKit.Label(card.Body, "Label", outfit.label, UiTheme.Label, UiTheme.TextPrimary,
+                    TextAnchor.MiddleCenter);
+                SetBottomStretch(label.rectTransform, OutfitLabelBottom, OutfitLabelHeight);
                 lookCards.Add(card);
             }
 
-            RefreshCards(lookCards, lookIndex);
+            // Six skin tones; each swatch's tap area is a full sixth of the row (at least 144 u wide here).
+            int toneCount = CharacterLooks.Tones.Length;
+            float swatchW = Mathf.Floor(columnW / toneCount);
+            float swatchX = columnX + (columnW - toneCount * swatchW) * 0.5f;
+            for (int i = 0; i < toneCount; i++)
+            {
+                int index = i;
+                CharacterLooks.Tone tone = CharacterLooks.Tones[i];
+                Color colour = new Color32(tone.colour.r, tone.colour.g, tone.colour.b, 255);
+                toneSwatches.Add(SwatchView.Create(content, "Tone " + tone.id, swatchX + i * swatchW, swatchY, swatchW,
+                    SwatchRowHeight, colour, () => PickTone(index)));
+            }
+
+            RefreshCards(lookCards, outfitIndex);
+            RefreshSwatches();
         }
 
-        void PickLook(int index)
+        void PickOutfit(int index)
         {
-            lookIndex = Mathf.Clamp(index, 0, 5);
-            RefreshCards(lookCards, lookIndex);
-            draft.appearance = AppearanceFor(lookIndex);
+            outfitIndex = Mathf.Clamp(index, 0, CharacterLooks.Outfits.Length - 1);
+            RefreshCards(lookCards, outfitIndex);
+            draft.appearance = CurrentLook();
             if (lookPreview != null)
             {
                 lookPreview.SetAppearance(draft.appearance);
+            }
+        }
+
+        void PickTone(int index)
+        {
+            int next = Mathf.Clamp(index, 0, CharacterLooks.Tones.Length - 1);
+            if (next == toneIndex)
+            {
+                return;
+            }
+
+            toneIndex = next;
+            RefreshSwatches();
+            draft.appearance = CurrentLook();
+            if (lookPreview != null)
+            {
+                lookPreview.SetAppearance(draft.appearance);
+            }
+
+            if (lookThumbnails != null)
+            {
+                lookThumbnails.SetTone(draft.appearance);
+            }
+        }
+
+        void RefreshSwatches()
+        {
+            for (int i = 0; i < toneSwatches.Count; i++)
+            {
+                toneSwatches[i].SetSelected(i == toneIndex);
             }
         }
 
@@ -1408,6 +1490,52 @@ namespace MaliGo.PlayerIdentity
                 fill.color = selected ? UiTheme.Tint : UiTheme.Card;
                 ring.enabled = selected;
                 check.enabled = selected && check.sprite != null;
+            }
+        }
+
+        /// <summary>A round skin-tone swatch (80 u, outlined so the lightest tone shows on Paper) centred in a
+        /// tap area the size of its cell; selected = a Paper gap and a 108 u AccentPrimary ring around it.</summary>
+        sealed class SwatchView
+        {
+            Image ring;
+            Image gap;
+
+            public static SwatchView Create(RectTransform parent, string name, float x, float y, float w, float h,
+                Color colour, Action onTap)
+            {
+                RectTransform root = UiKit.Rect(parent, name);
+                SetTopLeft(root, x, y, w, h);
+
+                var hit = root.gameObject.AddComponent<Image>();
+                hit.color = Color.clear;
+                hit.raycastTarget = true;
+
+                var view = new SwatchView();
+                view.ring = UiKit.SpriteImage(root, "Ring", UiKit.Circle, SwatchRingSize, UiTheme.AccentPrimary);
+                view.gap = UiKit.SpriteImage(root, "Gap", UiKit.Circle, SwatchGapRingSize, UiTheme.Paper);
+                UiKit.SpriteImage(root, "Outline", UiKit.Circle, SwatchSize + 2f * UiTheme.Stroke * 0.5f,
+                    UiTheme.BorderControl);
+                UiKit.SpriteImage(root, "Swatch", UiKit.Circle, SwatchSize, colour);
+
+                var button = root.gameObject.AddComponent<Button>();
+                button.transition = Selectable.Transition.None;
+                var nav = button.navigation;
+                nav.mode = Navigation.Mode.None;
+                button.navigation = nav;
+                button.onClick.AddListener(() =>
+                {
+                    UiKit.NotifyButtonClicked();
+                    onTap?.Invoke();
+                });
+
+                view.SetSelected(false);
+                return view;
+            }
+
+            public void SetSelected(bool selected)
+            {
+                ring.enabled = selected;
+                gap.enabled = selected;
             }
         }
     }

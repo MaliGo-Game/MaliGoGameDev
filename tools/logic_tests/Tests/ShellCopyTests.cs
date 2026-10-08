@@ -92,9 +92,9 @@ public static class ShellCopyTests
         yield return OnboardingCopy.NameQuestion;
         yield return OnboardingCopy.NamePlaceholder;
         yield return OnboardingCopy.LookTitle;
-        for (int i = 1; i <= 6; i++)
+        foreach (CharacterLooks.Outfit outfit in CharacterLooks.Outfits)
         {
-            yield return OnboardingCopy.StyleLabel(i);
+            yield return outfit.label;
         }
 
         yield return OnboardingCopy.SpendQuestion;
@@ -209,9 +209,11 @@ public static class ShellCopyTests
     public static void TestNameRulesAndSixLooks()
     {
         Assert.True(OnboardingCopy.NameMaxLength == 16, "name max 16");
-        for (int i = 1; i <= 6; i++)
+        Assert.True(CharacterLooks.Outfits.Length == 6 && CharacterLooks.Tones.Length == 6, "six characters, six tones");
+        foreach (CharacterLooks.Outfit outfit in CharacterLooks.Outfits)
         {
-            Assert.Equal("Style " + i, OnboardingCopy.StyleLabel(i), "style label " + i);
+            // Card label: Label role (36 Bold) inside the narrowest card (landscape, 280 u) less its insets.
+            Assert.True(AileronMetrics.Width(outfit.label, "Bold", 36f) <= 280f - 2f * 16f, "card label fits: " + outfit.label);
         }
 
         Assert.True(GoalPresets.All.Length == 4, "four goals");

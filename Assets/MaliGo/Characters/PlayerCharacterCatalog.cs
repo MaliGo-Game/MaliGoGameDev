@@ -7,6 +7,9 @@ namespace MaliGo.PlayerIdentity
     [CreateAssetMenu(fileName = "PlayerCharacterCatalog", menuName = "MaliGo/Player Character Catalog")]
     public class PlayerCharacterCatalog : ScriptableObject
     {
+        const string BaseMapProperty = "_BaseMap";
+        const string MainTexProperty = "_MainTex";
+
         [Header("Kenney Assets")]
         public GameObject characterModelPrefab;
         public RuntimeAnimatorController animatorController;
@@ -22,24 +25,14 @@ namespace MaliGo.PlayerIdentity
             public Texture2D skinTexture;
         }
 
-        /// <summary>Resources folder of the six recoloured looks (DESIGN_SPEC §4.6, §6.3b).</summary>
-        public const string RecolouredSkinFolder = "MaliGo/Skins/";
-
         /// <summary>
-        /// The skin texture for <paramref name="appearance"/>. First the recoloured skater skins (§4.6):
-        /// <c>MaliGo/Skins/skaterMaleA_{tone}</c> when <c>genderPresentation</c> is "masculine", else
-        /// <c>skaterFemaleA_{tone}</c>, with tone light/medium/deep (anything else: medium). If that texture is not
-        /// shipped, the existing <see cref="skinOptions"/> lookup.
+        /// The stock Kenney skin closest to <paramref name="appearance"/>'s outfit, from <see cref="skinOptions"/>.
+        /// Only a fallback: the look normally comes from <see cref="CharacterSkins"/> (every outfit in every tone,
+        /// <see cref="CharacterLooks"/>).
         /// </summary>
         public Texture2D ResolveSkin(AppearanceData appearance)
         {
-            Texture2D recoloured = Resources.Load<Texture2D>(RecolouredSkinPath(appearance));
-            if (recoloured != null)
-            {
-                return recoloured;
-            }
-
-            if (appearance == null || skinOptions == null || skinOptions.Length == 0)
+            if (skinOptions == null || skinOptions.Length == 0)
             {
                 return null;
             }
@@ -57,7 +50,13 @@ namespace MaliGo.PlayerIdentity
             return skinOptions[0].skinTexture;
         }
 
-        public Material CreateRuntimeSkinMaterial(AppearanceData appearance)
+        /// <summary>
+        /// A new material showing <paramref name="appearance"/>: its outfit recoloured into its skin tone
+        /// (<see cref="CharacterSkins"/>; <paramref name="thumbnail"/> uses the half-size copy), or the stock skin if
+        /// that texture is missing. Free it with <see cref="ReleaseRuntimeSkinMaterial"/>, which also releases the
+        /// shared texture.
+        /// </summary>
+        public Material CreateRuntimeSkinMaterial(AppearanceData appearance, bool thumbnail = false)
         {
             if (baseSkinMaterial == null)
             {
@@ -65,48 +64,64 @@ namespace MaliGo.PlayerIdentity
             }
 
             Material runtimeMaterial = new Material(baseSkinMaterial);
-            Texture2D skin = ResolveSkin(appearance);
+            Texture2D skin = CharacterSkins.Acquire(appearance, thumbnail);
+            if (skin == null)
+            {
+                skin = ResolveSkin(appearance);
+            }
+
             if (skin != null)
             {
-                if (runtimeMaterial.HasProperty("_BaseMap"))
+                if (runtimeMaterial.HasProperty(BaseMapProperty))
                 {
-                    runtimeMaterial.SetTexture("_BaseMap", skin);
+                    runtimeMaterial.SetTexture(BaseMapProperty, skin);
                 }
-                else if (runtimeMaterial.HasProperty("_MainTex"))
+                else if (runtimeMaterial.HasProperty(MainTexProperty))
                 {
-                    runtimeMaterial.SetTexture("_MainTex", skin);
+                    runtimeMaterial.SetTexture(MainTexProperty, skin);
                 }
             }
 
             return runtimeMaterial;
         }
 
-        /// <summary>Resources path of the recoloured skin for <paramref name="appearance"/> (null = defaults).</summary>
-        public static string RecolouredSkinPath(AppearanceData appearance)
+        /// <summary>Destroys a material made by <see cref="CreateRuntimeSkinMaterial"/> and releases its runtime skin
+        /// texture (stock textures are left alone).</summary>
+        public static void ReleaseRuntimeSkinMaterial(Material material)
         {
-            string body = appearance != null && appearance.genderPresentation == "masculine" ? "skaterMaleA" : "skaterFemaleA";
-            string tone = appearance != null ? appearance.skinTone : null;
-            if (tone != "light" && tone != "medium" && tone != "deep")
+            if (material == null)
             {
-                tone = "medium";
+                return;
             }
 
-            return RecolouredSkinFolder + body + "_" + tone;
+            Texture skin = null;
+            if (material.HasProperty(BaseMapProperty))
+            {
+                skin = material.GetTexture(BaseMapProperty);
+            }
+            else if (material.HasProperty(MainTexProperty))
+            {
+                skin = material.GetTexture(MainTexProperty);
+            }
+
+            CharacterSkins.Release(skin);
+            Destroy(material);
         }
 
         static string MapAppearanceToSkinId(AppearanceData appearance)
         {
-            if (appearance.genderPresentation == "feminine")
+            switch (CharacterLooks.OutfitOf(appearance).id)
             {
-                return appearance.clothing == "smart" ? "cyborg_female" : "skater_female";
+                case CharacterLooks.StreetId:
+                case CharacterLooks.WorkwearId:
+                    return "skater_male";
+                case CharacterLooks.SmartId:
+                    return "criminal_male";
+                case CharacterLooks.NightOutId:
+                    return "cyborg_female";
+                default:
+                    return "skater_female";
             }
-
-            if (appearance.genderPresentation == "masculine")
-            {
-                return appearance.clothing == "smart" ? "criminal_male" : "skater_male";
-            }
-
-            return appearance.clothing == "sporty" ? "skater_male" : "skater_female";
         }
     }
 }

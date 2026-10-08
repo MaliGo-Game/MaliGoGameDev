@@ -232,6 +232,8 @@ namespace MaliGo.PlayerIdentity
         static void Repair(PlayerData loaded)
         {
             loaded.appearance ??= new AppearanceData();
+            // Saves from before outfits keep the look they had (CharacterLooks); unknown tones become "medium".
+            CharacterLooks.Normalize(loaded.appearance);
             loaded.financialProfile ??= new FinancialProfile();
             loaded.financialStats ??= new FinancialStats();
             loaded.progression ??= new ProgressionData();

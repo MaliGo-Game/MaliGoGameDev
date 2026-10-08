@@ -100,7 +100,7 @@ ask, don't invent.
 | 0:00 | Taps the Mali app icon. Unity splash only if the licence refuses to turn it off (§7.13). | `MaliGoAndroidSetup` |
 | 0:02 | **Character creation, screen 1 of 5.** Forest backdrop, cream sheet. At the top, the promise in DisplayTitle 72 on two lines: *"Live the week before payday."* / *"See where your money goes."* Under it *"What should we call you?"* and a 144 u-tall name field with the Android keyboard up. If an old save was just discarded, a one-line banner reads *"MaliGo has been updated — your story starts fresh."* for 6 s. The calm music loop fades in. | `CharacterCreationUI`, `OnboardingCopy`, `AudioManager` |
 | 0:12 | Reads the promise while the keyboard opens, types a name, taps **Next** (disabled while the name is empty). | |
-| 0:13 | **Screen 2: "Pick your look."** A turning 3D preview of the character on the left, six style cards (3 × 2: two builds × three skin tones, §4.6) on the right. Default: Style 1. Taps one, taps **Next**. | look preview, §5.4.13 |
+| 0:13 | **Screen 2: "Pick your look."** A turning 3D preview of the character on the left, six character cards (3 × 2, each with a small portrait and a style name) and six skin-tone swatches on the right (§4.6). Default: Skater, medium. Taps a card and a tone, taps **Next**. | look preview, §5.4.13 |
 | 0:22 | **Screen 3: your money (A3).** Two rows of four large cards. *"Where does most of your money go?"* → taps **Food and takeaways**. *"How do you usually get around?"* → taps **Minibus taxi**. As soon as both are picked a line fades in under the rows: *"We've built your week around where your money goes."* and the places, *"Kota shop · Taxi rank · Shops by the bank"*. **Next** (disabled until both rows have a pick). About 10 s. | `SpendingProfile`, `ChapterSchedule.WeekPlaces` |
 | 0:32 | **Screen 4: "What are you saving towards?"** Four goal cards: Emergency buffer R2 000 · December trip home R2 500 · New phone R3 000 · Side-hustle stock R1 500. Each card shows "R400 saved so far". Taps one, taps **Next**. | `GoalPresets` |
 | 0:40 | **Screen 5: Mali.** Mali's portrait (left, 520 u) and her words typing at 45 cps, three paragraphs, each paginated at 3 lines (§4.6): *"Hi {name}, I'm Mali. It's the week before payday: R600 in your pocket and R400 in savings."* → *"You're saving for your {goalName}: R{goalTarget}. The R150 shift on the main road opens once the day's first thing is sorted. It takes 60 of your 100 energy."* → *"I won't tell you what to do. I'll show you where your money went, every night."* Taps **Let's go**. | `isCharacterCreated = true`, `hasMetMali = true`, `ChapterFlow.StartChapter`, save written |
@@ -1317,7 +1317,7 @@ All strings below except the Mali paragraphs live in `OnboardingCopy` and `Spend
 | Screen | Title | Body / controls |
 |---|---|---|
 | 1 | Promise (DisplayTitle 72, two lines): "Live the week before payday." / "See where your money goes." | Question (Body 40 Bold) "What should we call you?"; field placeholder "Your name" (max 16 chars, trimmed). Button **Next** |
-| 2 | Pick your look | Cards "Style 1"…"Style 6", each with a 48 u skin-tone swatch. **Back** **Next** |
+| 2 | Pick your look | Six character cards (portrait + "Skater" · "Street" · "Night out" · "Smart" · "Outdoors" · "Workwear") and six skin-tone swatches. **Back** **Next** |
 | 3 | (no title; two questions) | "Where does most of your money go?" cards: "Food and takeaways" · "Getting around" · "Data, airtime and going out" · "Home and family". "How do you usually get around?" cards: "Minibus taxi" · "E-hailing rides" · "Mostly on foot" · "Own or shared car". Nothing preselected. Once both rows have a pick: "We've built your week around where your money goes." and under it `ChapterSchedule.WeekPlaces(focus, travel)` joined with " · " (e.g. "Kota shop · Taxi rank · Shops by the bank"). **Back** **Next** (Next disabled until both rows have a pick). On Next: `SpendingProfiles.SetFromOnboarding` |
 | 4 | What are you saving towards? | Cards: title, "R{target}", caption "R400 saved so far". **Back** **Next** |
 | 5 | (no title; Mali) | Three paragraphs (§1.1 0:40), each paginated at 3 lines by `UiTextLayout.Paginate`; tap advances. Button **Let's go** (sets `isCharacterCreated = true`, `hasMetMali = true`, runs `ChapterFlow.StartChapter`, saves) |
@@ -1327,24 +1327,27 @@ payday." 1 041 u, "See where your money goes." 1 014 u, both inside the 1 380 u 
 The two questions are plain and neutral: the cards name categories, not habits, and there is no "right"
 card. The places line describes, it does not advise.
 
-Look mapping. The stock Kenney skins all share one light peach skin colour, and two of them are a
-"criminal" and a "cyborg"; neither fits the players. Only the two skater skins are used, each recoloured
-into three skin tones (§6.3b), giving six looks. Two `AppearanceData` fields drive the model:
+Look mapping (`CharacterLooks`). Six characters, each a Kenney CC0 skin on the one model and rig every
+Kenney "Animated Characters" pack shares (characterMedium, byte-identical FBX and clips), so idle and
+run work for all of them; and six skin tones, any of which every character can wear. Labels name a style,
+never a gender, and everyone sees every card; the order alternates the builds.
 
-| Card | `genderPresentation` | `skinTone` | Texture (`Resources/MaliGo/Skins/`) |
+| Card | `outfit` | Source skin | Prepared by `tools/make_character_skins.py` |
 |---|---|---|---|
-| Style 1 | feminine | light | `skaterFemaleA_light` |
-| Style 2 | feminine | medium | `skaterFemaleA_medium` |
-| Style 3 | feminine | deep | `skaterFemaleA_deep` |
-| Style 4 | masculine | light | `skaterMaleA_light` |
-| Style 5 | masculine | medium | `skaterMaleA_medium` |
-| Style 6 | masculine | deep | `skaterMaleA_deep` |
+| Skater | `skater` | protagonists `skaterFemaleA` | as is |
+| Street | `street` | protagonists `skaterMaleA` | as is |
+| Night out | `nightout` | protagonists `cyborgFemaleA` | the human half mirrored over the robot half (through the mesh's symmetry) |
+| Smart | `smart` | protagonists `criminalMaleA` | as is (white shirt and trousers) |
+| Outdoors | `outdoors` | survivors `survivorFemaleA` | small dirt splashes filled |
+| Workwear | `workwear` | survivors `survivorMaleB` | small dirt splashes filled |
 
-`PlayerCharacterCatalog.ResolveSkin` (WP8) first tries `Resources.Load<Texture2D>("MaliGo/Skins/" +
-(genderPresentation == "masculine" ? "skaterMaleA" : "skaterFemaleA") + "_" + (skinTone is light/medium/deep ?
-skinTone : "medium"))`, and falls back to the existing `skinOptions` lookup. `clothing` and the other
-fields keep their defaults. The criminal and cyborg skins are never used. The 8 financial-profile
-questions are removed from the UI; their data keeps defaults (D2).
+Tones (`skinTone`): fair (234, 186, 148), light (198, 140, 100), medium (150, 96, 62), brown (124, 80, 52),
+deep (96, 60, 40), deepest (78, 48, 32); light, medium and deep keep the earlier looks' colours.
+`AppearanceData.outfit` (new, default "") holds the card; saves without it map to the look they had
+("masculine" → Street, anything else → Skater), and `PlayerDataManager` writes that back on load
+(`CharacterLooks.Normalize`). `CharacterLooks.Key` (outfit, tone and the other fields) drives
+`PlayerIdentityBridge`'s rebuild. The 8 financial-profile questions are removed from the UI; their data
+keeps defaults (D2).
 
 ### 4.7 First-run guide (coach marks)
 
@@ -1864,16 +1867,22 @@ Shows 6 s or until tapped.
   (1 041 and 1 014 u, line height 79), top at 90 u; 40 gap; the question "What should we call you?" Body
   40 Bold `TextSecondary` (52); 12 gap; name input 900 × 144, Body 46, `Sunken` fill + 4 u
   `BorderControl`, placeholder `TextMuted`. Bottom of the field at 496 u, clear of the buttons (top 696 u).
-- Look: left preview 560 × 560 `RawImage` showing a 512 × 512 `RenderTexture` from a dedicated camera
+- Look: the preview is a `RawImage` showing a 512 × 512 `RenderTexture` from a dedicated camera
   pointed at a model instance created from `PlayerCharacterCatalog.characterModelPrefab` at world
   (0, −500, 0), skin from `CreateRuntimeSkinMaterial`, rotating 20°/s (static when reduce motion). The
   model is the bare FBX, so `LookPreview` adds an `Animator` with `catalog.animatorController` (idle, no
-  T-pose). In `OnDestroy` it destroys the runtime skin material and the model instance and calls
-  `RenderTexture.Release()` + `Destroy` on the texture. The CharacterCreation scene, like the world, uses
-  `Renderer2D` with only a `Light2D`; the preview camera needs no 3D light, so don't add one. Six cards
-  246 × 160 in a 3 × 2 grid (gaps 20; row 1 the feminine build in light/medium/deep, row 2 the masculine
-  build), each with a 48 u circle swatch of its tone and "Style {n}" Label Bold. If the catalog or model
-  is missing: no preview, cards only.
+  T-pose). In `OnDestroy` it releases the runtime skin material (`ReleaseRuntimeSkinMaterial`, which also
+  drops its shared texture) and destroys the model instance, and calls `RenderTexture.Release()` +
+  `Destroy` on the texture. The CharacterCreation scene, like the world, uses `Renderer2D` with only a
+  `Light2D`; the preview camera needs no 3D light, so don't add one.
+  Landscape: preview 460 × 460 on the left (centred in the 128–688 band); on the right (880 u) six
+  character cards 280 × 186 in a 3 × 2 grid (gaps 20) above a row of six swatches (tap area 146 × 144,
+  swatch 80 u with a `BorderControl` outline; selected = `Paper` gap + 108 u `AccentPrimary` ring).
+  Portrait: preview (280–560 u), cards 280 × ≤ 300, swatch row, one column. Each card shows its portrait
+  (a cell of one `LookThumbnails` strip: the six models at world (0, −560, 0), one orthographic camera,
+  half-size skins in the picked tone, drawn for 3 frames after a build or tone change and then left still)
+  and its style name, Label 36 Bold. Picking a card re-skins the preview; picking a tone re-skins the
+  preview and the six portraits. If the catalog or model is missing: no preview or portraits, labels only.
 - **Screen 3 (your money, A3):** two rows, each a question in Body 40 Bold `TextPrimary` (52; 689 and
   607 u) and, 12 u under it, four cards 330 × 144 (gaps 20; 4 × 330 + 3 × 20 = 1 380), `Card`, radius 36,
   card shadow, label Label 36 Bold centred, ≤ 2 lines in 250 u ("Data, airtime and going out" 215 + 237 u,
@@ -1952,23 +1961,24 @@ the app icon (A5, closes E4). It is brand art, not CC0, so it stays out of any a
 | `Assets/Resources/MaliGo/Mali/MaliWave.png` | `Assets/MaliGo Pitch Deck.png` (779 × 779 RGBA, full-body wave) | Crop alpha bbox (168, 75)–(620, 683) padded 16 → (152, 59)–(636, 699) = 484 × 640; paste centred on a 512 × 640 transparent canvas. The original file stays where it is (it is not under Resources, so it never ships). |
 | — | `Assets/Mali Dumbfound.png` | **Not used** (mirrored "R" on the coin). |
 
-### 6.3b Skin tones (WP2, script `tools/make_skin_tones.py`, PIL)
+### 6.3b Characters and skin tones (script `tools/make_character_skins.py`, PIL + numpy + scipy)
 
-The four stock skins share one light peach skin (base colour (245, 140, 106) with a gradient of shades).
-The script writes six recoloured copies of the two skater skins, which stay CC0:
+Six Kenney CC0 skins become `Assets/Resources/MaliGo/Characters/Outfits/{outfit}.png` (§4.6 table), 512 × 512
+RGBA, box-downscaled from 1024. The survivors pack (kenney.nl "Animated Characters Survivors", CC0) is not
+in the project: its two skins and License.txt sit in `Assets/MaliGo/Characters/SkinSources~` (ignored by
+Unity), the licence also in `Assets/MaliGo/Licenses`.
 
-| Input (`Assets/kenney_animated-characters-protagonists/Skins/`) | Outputs (`Assets/Resources/MaliGo/Skins/`) |
-|---|---|
-| `skaterFemaleA.png` | `skaterFemaleA_light.png`, `skaterFemaleA_medium.png`, `skaterFemaleA_deep.png` |
-| `skaterMaleA.png` | `skaterMaleA_light.png`, `skaterMaleA_medium.png`, `skaterMaleA_deep.png` |
-
-- Skin pixels: R ∈ [243, 245], G ∈ [115, 155], B ∈ [85, 122] (the face/hands gradient and the ear, nose
-  and lip accents; checked on 3 Oct: shirt colours such as (242, 101, 76) and (228, 120, 62) fall outside).
-- New colour per channel = round(target × pixel / base), clamped to 255, base (245, 140, 106); alpha kept.
-  Targets: light (198, 140, 100), medium (150, 96, 62), deep (96, 60, 40).
-- The script prints the number of pixels changed per file and writes `tools/out/skin_preview.png`
-  (all six side by side, not committed; WP1 adds `tools/out/` to `.gitignore` with its other lines) for the human check H3 (§10).
-- `.meta`: PNG template, `textureType: 0`, `maxTextureSize: 1024`, **mipmaps on**, `sRGBTexture: 1`.
+- Skin mask in alpha: 255 = not skin, 255 − round(127 w) for skin weight w (128 = all skin). A texel is
+  skin when its per-channel ratio to the skin's flat colour (Kenney (245, 146, 113); survivorFemaleA
+  (135, 34, 26)) is nearly uniform: mean k in [0.8, 1.2], every channel within 0.12 of k (keeps shades and
+  ear, nose and lip accents; rejects shirts such as (242, 101, 76) and (228, 120, 62) and brown hair).
+  Edge texels next to skin get a partial weight by unmixing against their most different neighbour.
+- Runtime (`SkinToneMath`, `CharacterSkins`): all-skin texels become tone × texel / base per channel,
+  edge texels texel + w (tone − base). Done once per selection into a cached, reference-counted,
+  mipmapped RGB24 texture (CPU copy dropped); never per frame.
+- `.meta`: `textureType: 0`, Read/Write on, uncompressed, no mipmaps, `alphaIsTransparency: 0`,
+  `maxTextureSize: 512`. `--preview` writes `tools/out/character_preview.png` (every outfit in every tone on
+  the model; not committed) for the human check H3 (§10).
 
 ### 6.4 Audio (WP4) → `Assets/Resources/MaliGo/Audio/`
 
@@ -2553,7 +2563,7 @@ use it (via `UiCanvasFactory.Create`).
   UiModal,UiAnchors}.cs`; `Assets/Scripts/Settings/GameSettings.cs`; every shared folder and its meta (§6);
   assets §6.1, §6.2, §6.3, §6.3b with metas and licences; `tools/prepare_mali_art.py`,
   `tools/convert_fonts.py`, `tools/make_font_metrics.py` (→ `tools/logic_tests/Generated/AileronMetrics.cs`),
-  `tools/make_skin_tones.py`.
+  `tools/make_character_skins.py`.
 - Modifies: `.gitattributes` (**first**, before any font file is added: §6 LFS rule).
 - Exposes: §5.1 tokens as `UiTheme` constants/colours; `UiFonts.Get(UiFontWeight)` with the §5.2 rule 6
   self-test; `UiKit` (`RoundedRect`, `SoftShadow`, `Circle`, `White`, `EnergyBolt`, `Icon(string name)`,
@@ -2570,7 +2580,7 @@ use it (via `UiCanvasFactory.Create`).
 - Revision 3: also imports `arrowRight.png` (§6.2) for the HUD Today pill.
 - Acceptance: compile; `git check-attr filter -- a.ttf a.otf a.ogg a.mp3` prints `unspecified` for all
   four; `convert_fonts.py` prints 337 cmap entries and U+2212 mapped for each weight; `prepare_mali_art.py`
-  prints the output sizes (512×512 and 512×640) and the source MD5; `make_skin_tones.py` prints the changed
+  prints the output sizes (512×512 and 512×640) and the source MD5; `make_character_skins.py` prints the skin share
   pixel count per file (non-zero) and writes the preview; every file in §6.1–6.3b exists under Resources
   with a `.meta`; PNG metas follow the §6 template (no `internalIDToNameTable` entries).
 

@@ -118,11 +118,8 @@ namespace MaliGo.PlayerIdentity
 
         void ReleaseRuntimeMaterial()
         {
-            if (runtimeMaterial != null)
-            {
-                Destroy(runtimeMaterial);
-            }
-
+            // Also drops this look's reference to its shared skin texture (destroyed when nothing else shows it).
+            PlayerCharacterCatalog.ReleaseRuntimeSkinMaterial(runtimeMaterial);
             runtimeMaterial = null;
         }
 
@@ -131,16 +128,8 @@ namespace MaliGo.PlayerIdentity
             ReleaseRuntimeMaterial();
         }
 
-        static string AppearanceKey(AppearanceData a)
-        {
-            if (a == null)
-            {
-                return "";
-            }
-
-            return string.Join("|", a.skinTone, a.hairstyle, a.hairColor, a.clothing, a.accessories,
-                a.genderPresentation, a.bodyType);
-        }
+        /// <summary>The resolved outfit and tone plus the other appearance fields (<see cref="CharacterLooks.Key"/>).</summary>
+        static string AppearanceKey(AppearanceData a) => CharacterLooks.Key(a);
 
         static string SanitizeName(string name)
         {

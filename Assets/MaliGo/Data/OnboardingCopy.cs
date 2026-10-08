@@ -15,8 +15,8 @@ namespace MaliGo.Data
         public const int NameMaxLength = 16;
 
         // Screen 2: the look.
+        // The character cards' names are CharacterLooks.Outfits[i].label.
         public const string LookTitle = "Pick your look";
-        public const string StyleLabelPrefix = "Style ";
 
         // Screen 3: the spending profile (two taps).
         public const string SpendQuestion = "Where does most of your money go?";
@@ -35,8 +35,5 @@ namespace MaliGo.Data
 
         /// <summary>Shown once on the first screen after an old save was discarded.</summary>
         public const string UpdatedNotice = "MaliGo has been updated — your story starts fresh.";
-
-        /// <summary>"Style 1" ... "Style 6".</summary>
-        public static string StyleLabel(int number) => StyleLabelPrefix + number;
     }
 }

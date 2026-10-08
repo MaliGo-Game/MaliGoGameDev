@@ -1,0 +1,57 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3f297a86e1844514946e12dc6baec28f, type: 3}
+  m_Name: TownPieceCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::MaliGo.World.TownPieceCatalog
+  pieces:
+  - id: roads/road-straight
+    prefab: {fileID: 919132149155446097, guid: fc3b8ea62e1e09e47b9e29492504cc75, type: 3}
+  - id: roads/road-bend
+    prefab: {fileID: 919132149155446097, guid: adb35da777306624da62e6a8711b908c, type: 3}
+  - id: roads/road-intersection
+    prefab: {fileID: 919132149155446097, guid: 2e358ce06f610bb448eecce1c68a489d, type: 3}
+  - id: roads/road-crossroad
+    prefab: {fileID: 919132149155446097, guid: 3b159370a3e7c0f48b377d8315a4ab77, type: 3}
+  - id: roads/road-end
+    prefab: {fileID: 919132149155446097, guid: 8372e56474ff7f246995c7f9b467f900, type: 3}
+  - id: suburban/building-type-c
+    prefab: {fileID: 919132149155446097, guid: d144cd9f8fb64904c9443349e9c066fa, type: 3}
+  - id: suburban/building-type-e
+    prefab: {fileID: 919132149155446097, guid: 07b8cb08aabe66146b3403539c34e258, type: 3}
+  - id: suburban/building-type-g
+    prefab: {fileID: 919132149155446097, guid: 9f056bc836d712648a080e3c83a74b72, type: 3}
+  - id: suburban/building-type-h
+    prefab: {fileID: 919132149155446097, guid: 712c429fb7d9a614ab6ce7261ca94189, type: 3}
+  - id: suburban/building-type-p
+    prefab: {fileID: 919132149155446097, guid: 9d6db0ef700f3ae4386b8a2c2b008234, type: 3}
+  - id: suburban/building-type-s
+    prefab: {fileID: 919132149155446097, guid: 48a4e37f2deee18448968e137d164954, type: 3}
+  - id: commercial/building-b
+    prefab: {fileID: 919132149155446097, guid: cd87f65fd53924b44bf04aecc1fc241a, type: 3}
+  - id: commercial/building-c
+    prefab: {fileID: 919132149155446097, guid: 767a249ebc6aeb54bad5b36636de2b59, type: 3}
+  - id: commercial/building-d
+    prefab: {fileID: 919132149155446097, guid: a316626ef3387ea408736e56104f7ad3, type: 3}
+  - id: commercial/building-f
+    prefab: {fileID: 919132149155446097, guid: 28fc91d4dff960840ac83067ce6e9e28, type: 3}
+  - id: commercial/building-g
+    prefab: {fileID: 919132149155446097, guid: 4dc0b80d9cb7f2547aa5209c1a68af86, type: 3}
+  - id: commercial/building-h
+    prefab: {fileID: 919132149155446097, guid: 6869ff60df2c45147946a4399789e378, type: 3}
+  - id: suburban/building-type-f
+    prefab: {fileID: 919132149155446097, guid: b9b023596f572ae46b26fc693a6987bf, type: 3}
+  - id: suburban/building-type-k
+    prefab: {fileID: 919132149155446097, guid: 9216a971f8116ff45bb740a006014db7, type: 3}
+  - id: suburban/tree-large
+    prefab: {fileID: 919132149155446097, guid: 7046d4e651c5f09458d1907cbe0d2b61, type: 3}
+  - id: suburban/tree-small
+    prefab: {fileID: 919132149155446097, guid: cf7367aad33fc064fa3b17bee896332b, type: 3}

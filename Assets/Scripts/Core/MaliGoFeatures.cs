@@ -35,6 +35,16 @@ namespace MaliGo.Core
         /// Needs <see cref="ProfileTaps"/>.</summary>
         public static bool BankFeedOnboarding = false;
 
+        /// <summary>On (the beta default): the car parked in the player's driveway can be driven ("Drive" when beside
+        /// it, "Get out" to park), and the streets around the town are built for it. Anyone can drive in the beta;
+        /// owning, fuelling and insuring a car are future money hooks (the travel profile's "car" choice), not charged.
+        /// Off: the car stays a parked prop.</summary>
+        public static bool Driving = true;
+
+        /// <summary>On: the ring road, the streets joining it and the houses and shops along them are built around the
+        /// original town at runtime (TownExpansion). Off: the town is exactly the scene's.</summary>
+        public static bool TownExpansion = true;
+
         /// <summary>Developer toggle: the sample persona the bank step starts with ("" = the first one; ids in
         /// MaliGo.BankFeed.SampleTransactionSource). The summary screen can also cycle through them.</summary>
         public static string BankFeedSamplePersona = "";

@@ -22,6 +22,11 @@ namespace MaliGo.World
     /// the town. <see cref="Changed"/> is raised on every switch. The rooms are built inside the town's XZ footprint
     /// (high above it), so code that read the town rectangle once still lets the player walk the whole room; the
     /// room's walls keep them in it.
+    ///
+    /// The streets added around the town at runtime (<c>TownExpansion</c>) are not under the two measured groups (their
+    /// outer houses would let the player wander behind them); instead their road rectangle is added with
+    /// <see cref="SetTownExtension"/>, which grows the town rectangle (and so the camera bounds) to include it, and
+    /// <see cref="SetDriveArea"/> records the rectangle the player's car is kept in.
     /// </summary>
     public static class WalkableArea
     {
@@ -47,6 +52,14 @@ namespace MaliGo.World
         static bool cachedFound;
         static Rect cachedArea;
 
+        static bool extensionSet;
+        static int extensionSceneHandle;
+        static Rect extension;
+
+        static bool driveAreaSet;
+        static int driveAreaSceneHandle;
+        static Rect driveArea;
+
         static bool interiorActive;
         static int interiorSceneHandle;
         static Rect interiorFloor;
@@ -63,6 +76,12 @@ namespace MaliGo.World
             cachedFound = false;
             cachedSceneHandle = 0;
             cachedArea = default;
+            extensionSet = false;
+            extensionSceneHandle = 0;
+            extension = default;
+            driveAreaSet = false;
+            driveAreaSceneHandle = 0;
+            driveArea = default;
             interiorActive = false;
             interiorSceneHandle = 0;
             interiorFloor = default;
@@ -102,6 +121,46 @@ namespace MaliGo.World
             interiorActive = false;
             interiorViewSize = 0f;
             Changed?.Invoke();
+        }
+
+        /// <summary>
+        /// Grows the town rectangle of the active scene to include <paramref name="area"/> (world XZ, shrunk by
+        /// <see cref="EdgeMargin"/> like the measured town) and raises <see cref="Changed"/>, so the player and the
+        /// camera pick it up at once.
+        /// </summary>
+        public static void SetTownExtension(Rect area)
+        {
+            float minX = area.xMin;
+            float maxX = area.xMax;
+            float minZ = area.yMin;
+            float maxZ = area.yMax;
+            MovementMath.Shrink(ref minX, ref maxX, EdgeMargin);
+            MovementMath.Shrink(ref minZ, ref maxZ, EdgeMargin);
+            extension = Rect.MinMaxRect(minX, minZ, maxX, maxZ);
+            extensionSet = true;
+            extensionSceneHandle = SceneManager.GetActiveScene().handle;
+            Changed?.Invoke();
+        }
+
+        /// <summary>Records the rectangle (world XZ) the player's car is kept in for the active scene.</summary>
+        public static void SetDriveArea(Rect area)
+        {
+            driveArea = area;
+            driveAreaSet = true;
+            driveAreaSceneHandle = SceneManager.GetActiveScene().handle;
+        }
+
+        /// <summary>The rectangle (world XZ) the player's car is kept in: the road network; false when the scene has
+        /// none (then the car is held by the town rectangle, or nothing).</summary>
+        public static bool TryGetDriveArea(out Rect area)
+        {
+            if (driveAreaSet && driveAreaSceneHandle == SceneManager.GetActiveScene().handle)
+            {
+                area = driveArea;
+                return true;
+            }
+
+            return TryGetTown(out area);
         }
 
         /// <summary>
@@ -147,7 +206,17 @@ namespace MaliGo.World
             }
 
             area = cachedArea;
-            return cachedFound;
+            bool found = cachedFound;
+            if (extensionSet && extensionSceneHandle == handle)
+            {
+                area = found
+                    ? Rect.MinMaxRect(Mathf.Min(area.xMin, extension.xMin), Mathf.Min(area.yMin, extension.yMin),
+                        Mathf.Max(area.xMax, extension.xMax), Mathf.Max(area.yMax, extension.yMax))
+                    : extension;
+                found = true;
+            }
+
+            return found;
         }
 
         static bool Measure(out Rect area)

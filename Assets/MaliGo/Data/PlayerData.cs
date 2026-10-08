@@ -66,6 +66,13 @@ namespace MaliGo.Data
         /// </summary>
         public string[] followUps = Array.Empty<string>();
 
+        /// <summary>
+        /// Opt-in bank-feed habit summary (docs/BANK_FEED.md); empty unless the player connected and agreed. Only the
+        /// summary is kept, never transactions. A save without it loads an empty one (no save-version change). Kept
+        /// by ChapterFlow.StartChapter, cleared by "Forget my bank data" (BankHabits.Forget) or Start over.
+        /// </summary>
+        public BankHabitSummary bankHabits = new BankHabitSummary();
+
         /// <summary>True when a save of this version must be discarded on load.</summary>
         public static bool ShouldReset(int saveVersion) => saveVersion < CurrentSaveVersion;
 
@@ -87,6 +94,7 @@ namespace MaliGo.Data
                 progression = new ProgressionData(),
                 isCharacterCreated = false,
                 spendingProfile = new SpendingProfile(),
+                bankHabits = new BankHabitSummary(),
                 followUps = Array.Empty<string>()
             };
             MaliGo.Economy.ChapterFlow.StartChapter(data, 1);

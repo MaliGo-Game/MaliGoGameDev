@@ -28,5 +28,15 @@ namespace MaliGo.Core
         /// keyboard no longer covers the name field) and the app turns to landscape when the world opens. Off: the
         /// whole app, onboarding included, stays landscape as before.</summary>
         public static bool PortraitOnboarding = true;
+
+        /// <summary>Off (the beta default): onboarding has no "Connect your bank" step, so the two profile taps run
+        /// exactly as before. On: an optional step before the taps (consent, then, with no live provider registered,
+        /// a clearly labelled sample person) that pre-fills the taps from a habit summary (docs/BANK_FEED.md).
+        /// Needs <see cref="ProfileTaps"/>.</summary>
+        public static bool BankFeedOnboarding = false;
+
+        /// <summary>Developer toggle: the sample persona the bank step starts with ("" = the first one; ids in
+        /// MaliGo.BankFeed.SampleTransactionSource). The summary screen can also cycle through them.</summary>
+        public static string BankFeedSamplePersona = "";
     }
 }

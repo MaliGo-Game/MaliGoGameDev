@@ -900,7 +900,7 @@ public static class CoreTests
         Assert.Equal("Where does most of your money go?", OnboardingCopy.SpendQuestion, "spend question");
         Assert.Equal("How do you usually get around?", OnboardingCopy.TravelQuestion, "travel question");
         Assert.Equal("We've built your week around where your money goes.", OnboardingCopy.WeekBuiltLine, "week line");
-        Assert.Equal("Style 6", OnboardingCopy.StyleLabel(6), "style label");
+        Assert.Equal("Pick your look", OnboardingCopy.LookTitle, "look title");
     }
 
     public static void TestMoneyCategories()

@@ -137,7 +137,8 @@ namespace MaliGo.UI
             previewCamera.farClipPlane = distance + 10f;
         }
 
-        /// <summary>Re-skins the model for <paramref name="appearance"/> (the previous runtime material is destroyed).</summary>
+        /// <summary>Re-skins the model for <paramref name="appearance"/> (the previous runtime material is destroyed and
+        /// its shared skin texture released).</summary>
         public void SetAppearance(AppearanceData appearance)
         {
             if (catalog == null || renderers == null)
@@ -169,7 +170,7 @@ namespace MaliGo.UI
 
             if (runtimeMaterial != null)
             {
-                Destroy(runtimeMaterial);
+                PlayerCharacterCatalog.ReleaseRuntimeSkinMaterial(runtimeMaterial);
             }
 
             runtimeMaterial = next;
@@ -195,7 +196,7 @@ namespace MaliGo.UI
 
             if (runtimeMaterial != null)
             {
-                Destroy(runtimeMaterial);
+                PlayerCharacterCatalog.ReleaseRuntimeSkinMaterial(runtimeMaterial);
                 runtimeMaterial = null;
             }
 

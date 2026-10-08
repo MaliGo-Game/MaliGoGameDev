@@ -4,10 +4,16 @@
     Nothing in the scenes uses a CapsuleCollider or SphereCollider, so managed code stripping removed them and
     the IL2CPP build logged "Can't add component because class 'CapsuleCollider' doesn't exist!".
   -->
+  <!--
+    The streets and the drivable car are built from code at runtime (TownExpansion, VehicleColliders, DrivableCar):
+    BoxColliders on the parked cars, buildings and tree trunks, and a kinematic Rigidbody on the player's car. Kept here
+    as well, so stripping can never remove a component that only code adds.
+  -->
   <assembly fullname="UnityEngine.PhysicsModule">
     <type fullname="UnityEngine.BoxCollider" preserve="all" />
     <type fullname="UnityEngine.SphereCollider" preserve="all" />
     <type fullname="UnityEngine.CapsuleCollider" preserve="all" />
     <type fullname="UnityEngine.MeshCollider" preserve="all" />
+    <type fullname="UnityEngine.Rigidbody" preserve="all" />
   </assembly>
 </linker>

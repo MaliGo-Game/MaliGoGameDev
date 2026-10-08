@@ -39,6 +39,13 @@ public class MaliGoCameraController : MonoBehaviour
     /// </summary>
     const float ViewSizeSharpness = 12f;
 
+    /// <summary>
+    /// While driving the view widens by <see cref="DrivableCar.DrivingViewScale"/> (more road ahead at car speed) and
+    /// eases out and back at this gentler rate (~95 % in a second), for a little while after getting out too.
+    /// </summary>
+    const float DrivingViewSharpness = 3f;
+    const float DrivingViewSettleSeconds = 2f;
+
     private Camera mainCamera;
     private Vector3 currentVelocity = Vector3.zero;
     private float baseOrthographicSize = OrthographicSize;
@@ -116,8 +123,11 @@ public class MaliGoCameraController : MonoBehaviour
         {
             // Inside a room the view frames the whole (small) room; outside it is the town's size (and zoom).
             float interiorSize = WalkableArea.InteriorViewSize;
-            float goal = interiorSize > 0f ? interiorSize : baseOrthographicSize;
-            mainCamera.orthographicSize = InteriorMath.Ease(mainCamera.orthographicSize, goal, ViewSizeSharpness, Time.unscaledDeltaTime);
+            float goal = interiorSize > 0f ? interiorSize : baseOrthographicSize * DrivableCar.ViewScale;
+            bool driveEase = interiorSize <= 0f
+                && (DrivableCar.IsDriving || DrivableCar.SecondsSinceDriving < DrivingViewSettleSeconds);
+            float sharpness = driveEase ? DrivingViewSharpness : ViewSizeSharpness;
+            mainCamera.orthographicSize = InteriorMath.Ease(mainCamera.orthographicSize, goal, sharpness, Time.unscaledDeltaTime);
         }
 
         snapPending = false;
@@ -147,10 +157,11 @@ public class MaliGoCameraController : MonoBehaviour
         }
     }
 
-    /// <summary>The target's position with X and Z kept inside <see cref="minBounds"/>/<see cref="maxBounds"/>.</summary>
+    /// <summary>The target's position (plus the car's look-ahead while driving, <see cref="DrivableCar.CameraLead"/>)
+    /// with X and Z kept inside <see cref="minBounds"/>/<see cref="maxBounds"/>.</summary>
     Vector3 Focus()
     {
-        Vector3 position = target.position;
+        Vector3 position = target.position + DrivableCar.CameraLead;
         position.x = Mathf.Clamp(position.x, minBounds.x, maxBounds.x);
         position.z = Mathf.Clamp(position.z, minBounds.z, maxBounds.z);
         return position;

@@ -368,21 +368,14 @@ public class MaliGoWorldGenerator
         SpawnModel(CarPath + "hatchback-sports.fbx", new Vector3(-3.0f, 0f, 0.15f), Quaternion.Euler(0, 90, 0), vehiclesRoot.transform, "Vehicle_MainRoad_1");
         SpawnModel(CarPath + "taxi.fbx", new Vector3(4.0f, 0f, 0.15f), Quaternion.Euler(0, 270, 0), vehiclesRoot.transform, "Vehicle_MainRoad_2");
 
-        // Delivery van near the commercial hub, giving it some life
-        SpawnModel(CarPath + "delivery.fbx", new Vector3(-3.3f, 0f, 4.4f), Quaternion.Euler(0, 90, 0), vehiclesRoot.transform, "Vehicle_DeliveryVan");
+        // Delivery van near the commercial hub, giving it some life - north of the Bank's west-facing door, not across
+        // it (at z = 4.4 it covered the whole doorway and the spot the Bank's exit puts the player on).
+        SpawnModel(CarPath + "delivery.fbx", new Vector3(-3.3f, 0f, 5.25f), Quaternion.Euler(0, 90, 0), vehiclesRoot.transform, "Vehicle_DeliveryVan");
 
         ApplyVehicleScale(vehiclesRoot);
 
-        // Collide like the rest of the environment (see GenerateScene's equivalent pass)
-        var vehicleMeshFilters = vehiclesRoot.GetComponentsInChildren<MeshFilter>();
-        foreach (var mf in vehicleMeshFilters)
-        {
-            if (mf.GetComponent<Collider>() == null)
-            {
-                MeshCollider mc = mf.gameObject.AddComponent<MeshCollider>();
-                mc.sharedMesh = mf.sharedMesh;
-            }
-        }
+        // No colliders here: at runtime MaliGo.World.VehicleColliders gives each car one fitted box on the Vehicle
+        // layer. Per-part MeshColliders (body shell + four wheels) trapped and snagged the player's small capsule.
 
         EditorSceneManager.MarkSceneDirty(activeScene);
         EditorSceneManager.SaveScene(activeScene);

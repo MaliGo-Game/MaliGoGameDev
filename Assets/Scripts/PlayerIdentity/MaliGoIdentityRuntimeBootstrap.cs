@@ -130,10 +130,16 @@ namespace MaliGo.PlayerIdentity
                 ScenarioWorldWiring.EnsureAllScenarioTriggers();
             });
 
+            // Parked cars get simple colliders (and the van leaves the Bank's door); the streets around the town are
+            // built and the walkable town grows to them. Before the rooms, which are centred on the town.
+            Step("town", MaliGo.World.TownExpansion.Ensure);
+
             // The walk-in rooms first: Home and Bank are placed inside them (beside the bed, at the counter).
             Step("interiors", () => MaliGo.World.BuildingInteriors.Ensure());
 
             Step("world locations", MaliGo.World.WorldLocationWiring.EnsureLocations);
+
+            Step("driving", () => MaliGo.World.DrivableCar.Ensure());
 
             Step("day flow", () => MaliGo.World.DayFlowController.Ensure());
 

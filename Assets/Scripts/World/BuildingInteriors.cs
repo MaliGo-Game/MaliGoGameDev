@@ -336,6 +336,13 @@ namespace MaliGo.World
                 return;
             }
 
+            if (DrivableCar.IsDriving)
+            {
+                // Driving past a door never goes in; the doorway must be walked into again after getting out.
+                armed = false;
+                return;
+            }
+
             if (current != null && player.position.y < current.Room.Origin.y - 1f)
             {
                 // Never expected (walls and edges hold the player in), but a fall from a room must not be endless.
@@ -544,9 +551,39 @@ namespace MaliGo.World
             }
 
             leaving.Room.Root.SetActive(false);
-            InteriorMath.InFrontOf(leaving.StreetDoor.x, leaving.StreetDoor.z, leaving.StreetNormal.x, leaving.StreetNormal.z,
-                StreetExitDistance, out float x, out float z);
-            MovePlayer(new Vector3(x, leaving.StreetDoor.y, z), leaving.StreetNormal);
+            MovePlayer(StreetExitSpot(leaving), leaving.StreetNormal);
+        }
+
+        /// <summary>
+        /// Where the player comes out of a building: <see cref="StreetExitDistance"/> out from its door, or, when that
+        /// is taken (the delivery van used to be parked right there, so the Bank's exit put the player inside it), the
+        /// first clear ground further out, then to either side, then anywhere near (<see cref="PlayerPlacement"/>).
+        /// </summary>
+        Vector3 StreetExitSpot(Entry leaving)
+        {
+            Vector3 door = leaving.StreetDoor;
+            Vector3 normal = leaving.StreetNormal;
+            Vector3 side = new Vector3(normal.z, 0f, -normal.x);
+            Collider ignore = playerController;
+            float[] outward = { StreetExitDistance, StreetExitDistance + 0.2f, StreetExitDistance + 0.4f };
+            float[] across = { 0f, 0.3f, -0.3f, 0.55f, -0.55f };
+            Physics.SyncTransforms();
+            for (int a = 0; a < across.Length; a++)
+            {
+                for (int o = 0; o < outward.Length; o++)
+                {
+                    Vector3 candidate = door + normal * outward[o] + side * across[a];
+                    candidate.y = door.y;
+                    if (PlayerPlacement.IsClear(candidate, ignore))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+
+            InteriorMath.InFrontOf(door.x, door.z, normal.x, normal.z, StreetExitDistance, out float x, out float z);
+            PlayerPlacement.TryFindClearSpot(new Vector3(x, door.y, z), out Vector3 spot, ignore);
+            return spot;
         }
 
         /// <summary>
@@ -560,6 +597,9 @@ namespace MaliGo.World
             {
                 return;
             }
+
+            // Out of the car first, so the controller and the model are back before the player is moved.
+            DrivableCar.EjectDriver();
 
             bool wasEnabled = playerController != null && playerController.enabled;
             if (playerController != null)

@@ -16,6 +16,9 @@ namespace MaliGo.World
     /// stood still for 0.6 s (Mali is not registered: she is talked to from the HUD). Nothing is current while any modal is open. A tap (prompt or action button, via
     /// <see cref="RequestInteract"/>) or E calls the current one's <c>Interact</c>, or <c>OnDisabledTap</c> when it is
     /// greyed out. The request is cleared every frame whether or not anything used it.
+    ///
+    /// While an <see cref="Exclusive"/> interactable is set (the car's "Get out" while driving), it is the only one
+    /// offered, wherever the player is; nothing else in the world (doors, spots) can be picked.
     /// </summary>
     [DefaultExecutionOrder(-50)]
     public class InteractionArbiter : MonoBehaviour
@@ -36,6 +39,9 @@ namespace MaliGo.World
 
         public IInteractable Current { get; private set; }
 
+        /// <summary>When set, the only interactable offered (while it is available); null for the normal pick.</summary>
+        public static IInteractable Exclusive { get; set; }
+
         int requestFrame = NoRequest;
         Transform player;
         Vector3 lastPlayerPosition;
@@ -47,6 +53,7 @@ namespace MaliGo.World
         {
             registry.Clear();
             Instance = null;
+            Exclusive = null;
         }
 
         /// <summary>The arbiter on <paramref name="host"/> (created once; a null host gets a "MaliGo_Systems" object).</summary>
@@ -240,6 +247,30 @@ namespace MaliGo.World
 
         IInteractable Pick()
         {
+            IInteractable exclusive = Exclusive;
+            if (exclusive != null)
+            {
+                if ((exclusive as UnityEngine.Object) == null)
+                {
+                    Exclusive = null;
+                }
+                else
+                {
+                    bool exclusiveAvailable;
+                    try
+                    {
+                        exclusiveAvailable = exclusive.IsAvailable;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"[InteractionArbiter] IsAvailable threw: {ex}");
+                        exclusiveAvailable = false;
+                    }
+
+                    return exclusiveAvailable ? exclusive : null;
+                }
+            }
+
             Vector3 playerPosition = player.position;
             IInteractable bestWorld = null;
             float bestWorldDistance = float.MaxValue;

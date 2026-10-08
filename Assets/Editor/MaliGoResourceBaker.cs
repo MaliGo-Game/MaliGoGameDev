@@ -26,6 +26,7 @@ public static class MaliGoResourceBaker
         // kit draws its own surfaces.
         BakePlayerCharacterCatalog();
         BakeInteriorPieceCatalog();
+        BakeTownPieceCatalog();
         // SaveAssets only, no AssetDatabase.Refresh(): everything above goes through AssetDatabase.CreateAsset /
         // SetDirty, which needs no refresh, and BuildAndroidBeta calls this right before BuildPlayer, where a
         // Refresh could pick up the scripting-define change from MaliGoAndroidSetup.Configure, start a script
@@ -137,6 +138,52 @@ public static class MaliGoResourceBaker
         }
 
         Debug.Log($"[MaliGoResourceBaker] Interior piece catalog: {ids.Length - missing} of {ids.Length} furniture models.");
+    }
+
+    /// <summary>
+    /// The city-kit models the streets around the town are built from (MaliGo.Core.TownLayout.ModelKeys: five road
+    /// pieces, the houses, shops and trees, about 21 small FBX meshes): referenced from a catalog in Resources so
+    /// exactly these ship. The kits are not in git (see .gitignore); a checkout without them keeps the catalog as
+    /// committed rather than emptying it.
+    /// </summary>
+    static void BakeTownPieceCatalog()
+    {
+        string assetPath = ResourcesRoot + "/" + MaliGo.World.TownPieceCatalog.ResourceName + ".asset";
+        var catalog = AssetDatabase.LoadAssetAtPath<MaliGo.World.TownPieceCatalog>(assetPath);
+        bool isNew = catalog == null;
+        if (isNew)
+        {
+            catalog = ScriptableObject.CreateInstance<MaliGo.World.TownPieceCatalog>();
+        }
+
+        var keys = MaliGo.Core.TownLayout.ModelKeys();
+        var pieces = new MaliGo.World.TownPieceCatalog.Piece[keys.Count];
+        int missing = 0;
+        for (int i = 0; i < keys.Count; i++)
+        {
+            string modelPath = MaliGo.Core.TownLayout.AssetPathOf(keys[i]);
+            GameObject model = modelPath != null ? AssetDatabase.LoadAssetAtPath<GameObject>(modelPath) : null;
+            if (model == null)
+            {
+                missing++;
+                Debug.LogWarning($"[MaliGoResourceBaker] City-kit model not found at {modelPath} - it is left out of the streets.");
+                model = isNew ? null : catalog.Find(keys[i]);
+            }
+
+            pieces[i] = new MaliGo.World.TownPieceCatalog.Piece { id = keys[i], prefab = model };
+        }
+
+        catalog.pieces = pieces;
+        if (isNew)
+        {
+            AssetDatabase.CreateAsset(catalog, assetPath);
+        }
+        else
+        {
+            EditorUtility.SetDirty(catalog);
+        }
+
+        Debug.Log($"[MaliGoResourceBaker] Town piece catalog: {keys.Count - missing} of {keys.Count} city-kit models.");
     }
 
     static PlayerCharacterCatalog.SkinOption MakeSkin(string id, string texturePath)

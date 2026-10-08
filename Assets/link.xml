@@ -1,0 +1,13 @@
+<linker>
+  <!--
+    Keep the collider types GameObject.CreatePrimitive adds at runtime (InteriorRoomBuilder.BuiltinMesh).
+    Nothing in the scenes uses a CapsuleCollider or SphereCollider, so managed code stripping removed them and
+    the IL2CPP build logged "Can't add component because class 'CapsuleCollider' doesn't exist!".
+  -->
+  <assembly fullname="UnityEngine.PhysicsModule">
+    <type fullname="UnityEngine.BoxCollider" preserve="all" />
+    <type fullname="UnityEngine.SphereCollider" preserve="all" />
+    <type fullname="UnityEngine.CapsuleCollider" preserve="all" />
+    <type fullname="UnityEngine.MeshCollider" preserve="all" />
+  </assembly>
+</linker>

@@ -575,9 +575,18 @@ namespace MaliGo.World
             }
 
             Vector3 flat = new Vector3(facing.x, 0f, facing.z);
-            if (playerVisual != null && flat.sqrMagnitude > 0.0001f)
+            if (flat.sqrMagnitude > 0.0001f)
             {
-                playerVisual.rotation = Quaternion.LookRotation(flat.normalized, Vector3.up);
+                Quaternion look = Quaternion.LookRotation(flat.normalized, Vector3.up);
+                var mover = player.GetComponent<MaliGoPlayerController>();
+                if (mover != null)
+                {
+                    mover.SetFacing(look.eulerAngles.y);
+                }
+                else if (playerVisual != null)
+                {
+                    playerVisual.rotation = look;
+                }
             }
 
             armed = false;

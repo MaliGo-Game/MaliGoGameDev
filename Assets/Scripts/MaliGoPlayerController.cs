@@ -75,7 +75,36 @@ public class MaliGoPlayerController : MonoBehaviour
         facingYaw = visualController != null ? visualController.transform.eulerAngles.y : transform.eulerAngles.y;
 
         // Measured once per scene (cached in WalkableArea); false outside the town scene, then nothing is clamped.
+        // Re-read when the active area switches between the town and a room.
+        RefreshWalkableArea();
+    }
+
+    void OnEnable()
+    {
+        WalkableArea.Changed += RefreshWalkableArea;
+    }
+
+    void OnDisable()
+    {
+        WalkableArea.Changed -= RefreshWalkableArea;
+    }
+
+    private void RefreshWalkableArea()
+    {
         hasWalkableArea = WalkableArea.TryGet(out walkableArea);
+    }
+
+    /// <summary>Turns the body to <paramref name="yaw"/> degrees at once (after a door or on waking), so the next
+    /// step goes that way instead of the old heading.</summary>
+    public void SetFacing(float yaw)
+    {
+        facingYaw = yaw;
+        currentSpeed = 0f;
+        currentHorizontalVelocity = Vector3.zero;
+        if (visualController != null)
+        {
+            visualController.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+        }
     }
 
     void Update()

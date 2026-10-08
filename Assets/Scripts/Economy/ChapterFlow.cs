@@ -11,7 +11,7 @@ namespace MaliGo.Economy
         /// defaults (airtime Day 2, rent Day 3), completedScenarioIds empty, followUps empty, currentDay 1,
         /// lastWorkedDay 0, revealPendingForDay 0, morningLineDay 0, chapter = { chapterNumber 1,
         /// runNumber, startCash 600, startSavings 400 }, today opened, saveVersion = 2. Keeps name,
-        /// appearance, goals, paydayPlanId/Text, hasMetMali and spendingProfile.
+        /// appearance, goals, paydayPlanId/Text, hasMetMali, spendingProfile and bankHabits.
         /// This (with FinancialStats.CreateDefaults) is the only place besides MoneyRecorder that sets
         /// cash and savings: the start of a run.
         /// </summary>
@@ -57,6 +57,7 @@ namespace MaliGo.Economy
 
             // Kept as they are, but never left null.
             data.spendingProfile ??= new SpendingProfile();
+            data.bankHabits ??= new BankHabitSummary();
             data.paydayPlanId ??= "";
             data.paydayPlanText ??= "";
             data.goals ??= Array.Empty<FinancialGoal>();

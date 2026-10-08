@@ -28,6 +28,7 @@
     <Compile Include="$(AssetsRoot)Scripts\Core\**\*.cs" />
     <Compile Include="$(AssetsRoot)Scripts\Copy\**\*.cs" />
     <Compile Include="$(AssetsRoot)Scripts\Dialogue\**\*.cs" />
+    <Compile Include="$(AssetsRoot)Scripts\BankFeed\**\*.cs" Exclude="$(AssetsRoot)Scripts\BankFeed\Private\**" />
     <Compile Include="$(AssetsRoot)Scripts\Scenarios\ScenarioOutcome.cs" Condition="Exists('$(AssetsRoot)Scripts\Scenarios\ScenarioOutcome.cs')" />
     <Compile Include="UnityShim.cs" />
     <Compile Include="Program.cs" />

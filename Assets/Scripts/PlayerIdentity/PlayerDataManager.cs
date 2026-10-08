@@ -249,6 +249,8 @@ namespace MaliGo.PlayerIdentity
             loaded.spendingProfile ??= new SpendingProfile();
             loaded.spendingProfile.focus = SpendingFocus.Normalize(loaded.spendingProfile.focus);
             loaded.spendingProfile.travel = TravelMode.Normalize(loaded.spendingProfile.travel);
+            loaded.bankHabits ??= new BankHabitSummary();
+            loaded.bankHabits.categories ??= Array.Empty<CategoryHabit>();
             if (loaded.currentDay < 1)
             {
                 loaded.currentDay = 1;
@@ -313,6 +315,27 @@ namespace MaliGo.PlayerIdentity
             currentPlayer = PlayerData.CreateNew();
             GameEvents.ClearPendingMoneyChanged();
             NotifyChanged();
+        }
+
+        /// <summary>
+        /// "Forget my bank data": empties the bank habit summary and saves twice, so the .bak copy (the previous
+        /// save, kept by File.Replace) no longer holds it either. Any .corrupt copies are deleted for the same reason.
+        /// The spending profile and the week are kept.
+        /// </summary>
+        public void ForgetBankHabits()
+        {
+            if (currentPlayer == null)
+            {
+                return;
+            }
+
+            BankHabits.Forget(currentPlayer);
+            NotifyChanged();
+            Save();
+            Save();
+            string path = GetSavePath();
+            TryDelete(path + CorruptSuffix);
+            TryDelete(path + BackupSuffix + CorruptSuffix);
         }
 
         static void TryDelete(string path)

@@ -1,5 +1,7 @@
 using System;
+using MaliGo.BankFeed;
 using MaliGo.Core;
+using MaliGo.Data;
 using MaliGo.PlayerIdentity;
 using MaliGo.Settings;
 using MaliGo.UI.Kit;
@@ -18,6 +20,9 @@ namespace MaliGo.UI
     /// (Slow / Normal / Instant) and Start over... Every setting is written to <c>GameSettings</c> (PlayerPrefs) at
     /// once and applies live. Start over -> confirm -> <c>PlayerDataManager.DeleteSave()</c> -> timeScale 1 ->
     /// load CharacterCreation (PlayerPrefs untouched; the scene load clears the modal stack, §7.2).
+    /// "Forget my bank data" (docs/BANK_FEED.md) shows only while a bank habit summary is saved: a row under Start
+    /// over (the sheet grows by one row), which empties the summary at once (<c>PlayerDataManager.ForgetBankHabits</c>),
+    /// says so in a notice and hides itself. The spending profile and the week are kept.
     /// Both panels are modals: they push only when opened (never in Awake/OnEnable) and pop on close,
     /// <c>OnDisable</c> and <c>OnDestroy</c>.
     /// </summary>
@@ -54,6 +59,7 @@ namespace MaliGo.UI
         SettingToggle musicToggle;
         SettingToggle motionToggle;
         readonly SegmentButton[] segments = new SegmentButton[3];
+        Button forgetBankButton;
 
         bool open;
         bool confirmOpen;
@@ -276,6 +282,36 @@ namespace MaliGo.UI
             {
                 segments[i].SetSelected(i == speed);
             }
+
+            RefreshForgetBank();
+        }
+
+        // ================================================================ bank data
+
+        /// <summary>The Forget row shows only while a summary is saved; the sheet grows by a row for it.</summary>
+        void RefreshForgetBank()
+        {
+            if (forgetBankButton == null || sheet == null)
+            {
+                return;
+            }
+
+            PlayerDataManager manager = PlayerDataManager.Instance;
+            bool show = manager != null && BankHabits.Has(manager.CurrentPlayer);
+            forgetBankButton.gameObject.SetActive(show);
+            sheet.sizeDelta = new Vector2(SheetWidth, SheetHeight + (show ? RowHeight + RowGap : 0f));
+        }
+
+        void ForgetBank()
+        {
+            if (!open || PlayerDataManager.Instance == null)
+            {
+                return;
+            }
+
+            PlayerDataManager.Instance.ForgetBankHabits();
+            RefreshForgetBank();
+            NoticeBanner.Show(BankFeedCopy.ForgottenNotice);
         }
 
         // ================================================================ build
@@ -330,6 +366,10 @@ namespace MaliGo.UI
             {
                 startOverText.color = UiTheme.Attention;
             }
+
+            forgetBankButton = UiKit.SecondaryButton(sheet, BankFeedCopy.ForgetButton, ForgetBank, ColumnWidth);
+            SetTopLeft((RectTransform)forgetBankButton.transform, rightX, lastRowTop + RowHeight + RowGap, ColumnWidth,
+                RowHeight);
 
             canvas.gameObject.SetActive(false);
             BuildConfirm();

@@ -25,6 +25,8 @@ namespace MaliGo.PlayerIdentity
     ///   places from <c>ChapterSchedule.WeekPlaces</c>; Next needs a pick in both rows and runs
     ///   <c>SpendingProfiles.SetFromOnboarding</c> (skipped when <c>MaliGoFeatures.ProfileTaps</c> is off: the
     ///   default profile is kept);
+    ///   Before it, only when <c>MaliGoFeatures.BankFeedOnboarding</c> is on (off for the beta), the optional
+    ///   "Connect your bank" screen (CharacterCreationUI.BankFeed.cs), which can pre-fill the two taps;
     /// 4 the savings goal (<c>GoalPresets</c>);
     /// 5 Mali's three paragraphs, typed and paginated at 3 lines, with a big round continue button under the text;
     ///   Let's go sets <c>isCharacterCreated</c> and <c>hasMetMali</c>, runs <c>ChapterFlow.StartChapter(data, 1)</c>,
@@ -38,7 +40,7 @@ namespace MaliGo.PlayerIdentity
     /// field and Next stay in the upper half in both layouts, and the sheet lifts if the soft keyboard still
     /// reaches them.
     /// </summary>
-    public class CharacterCreationUI : MonoBehaviour
+    public partial class CharacterCreationUI : MonoBehaviour
     {
         // Mali's paragraphs (§1.1 0:40). Kept here, not in OnboardingCopy (§4.6).
         public const string MaliParagraph1 = "Hi {name}, I'm Mali. It's the week before payday: R600 in your pocket and R400 in savings.";
@@ -160,6 +162,11 @@ namespace MaliGo.PlayerIdentity
             screens.Add(ScreenLook);
             if (MaliGoFeatures.ProfileTaps)
             {
+                if (MaliGoFeatures.BankFeedOnboarding)
+                {
+                    screens.Add(ScreenBank);
+                }
+
                 screens.Add(ScreenProfile);
             }
 
@@ -338,6 +345,7 @@ namespace MaliGo.PlayerIdentity
             {
                 case ScreenName: BuildNameScreen(); break;
                 case ScreenLook: BuildLookScreen(); break;
+                case ScreenBank: BuildBankScreen(); break;
                 case ScreenProfile: BuildProfileScreen(); break;
                 case ScreenGoal: BuildGoalScreen(); break;
                 case ScreenMali: BuildMaliScreen(); break;
@@ -404,6 +412,7 @@ namespace MaliGo.PlayerIdentity
             switch (CurrentScreen)
             {
                 case ScreenName: ok = CleanName(nameInput != null ? nameInput.text : draftName).Length > 0; break;
+                case ScreenBank: ok = bankStage == BankSummary && bankPending != null && !bankBusy; break;
                 case ScreenProfile: ok = focusPick != null && travelPick != null; break;
                 case ScreenGoal: ok = goalPick != null; break;
                 default: ok = true; break;
@@ -414,7 +423,7 @@ namespace MaliGo.PlayerIdentity
 
         void OnBack()
         {
-            if (screenIndex == 0 || completing)
+            if (screenIndex == 0 || completing || BankBack())
             {
                 return;
             }
@@ -443,6 +452,14 @@ namespace MaliGo.PlayerIdentity
                     break;
                 case ScreenLook:
                     draft.appearance = AppearanceFor(lookIndex);
+                    break;
+                case ScreenBank:
+                    if (bankPending == null)
+                    {
+                        return;
+                    }
+
+                    AcceptBankSummary();
                     break;
                 case ScreenProfile:
                     if (focusPick == null || travelPick == null)

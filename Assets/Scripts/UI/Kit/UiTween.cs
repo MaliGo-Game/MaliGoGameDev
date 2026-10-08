@@ -162,7 +162,12 @@ namespace MaliGo.UI.Kit
                 return;
             }
             Func<float, string> f = format ?? (v => Mathf.RoundToInt(v).ToString(System.Globalization.CultureInfo.InvariantCulture));
-            CountUp(text, from, to, v => text.text = f(v), duration, onComplete);
+            // Explicitly the (Object, Action<float>) overload. "v => text.text = f(v)" is also a valid
+            // Func<float, string> (an assignment has a value), so with a Text first argument C# picked this same
+            // overload: endless self-recursion, which IL2CPP turned into a loop allocating ~270 MB/s until Android
+            // killed the game on every money count-up (Sleep's reveal, cash/savings after choices and the Bank).
+            Action<float> onValue = v => text.text = f(v);
+            CountUp((UnityEngine.Object)text, from, to, onValue, duration, onComplete);
         }
 
         /// <summary>Runs <paramref name="action"/> after <paramref name="seconds"/> of unscaled time, unless

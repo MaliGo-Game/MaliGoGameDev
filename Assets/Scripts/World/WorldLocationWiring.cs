@@ -4,8 +4,10 @@ namespace MaliGo.World
 {
     /// <summary>
     /// Places Home/Bank/Work into the already-built MaliGoWorld scene at runtime, the same
-    /// self-healing pattern as ScenarioWorldWiring - no manual Editor step required. Positions (DESIGN_SPEC §3.3):
-    /// Home (2.0, -1.2), Bank (-1.7, 4.7), Work (4.0, 0.3).
+    /// self-healing pattern as ScenarioWorldWiring - no manual Editor step required. Home and Bank are used inside
+    /// their walk-in rooms (beside the bed, at the teller counter: <see cref="BuildingInteriors"/>, wired just before
+    /// this); their street positions (DESIGN_SPEC §3.3: Home (2.0, -1.2), Bank (-1.7, 4.7)) are only the fallback if
+    /// the rooms could not be built. Work (4.0, 0.3) is used from the street.
     /// </summary>
     public static class WorldLocationWiring
     {
@@ -39,14 +41,25 @@ namespace MaliGo.World
                 return;
             }
 
-            GameObject anchor = GameObject.Find(PlayerHouseAnchor);
-            Vector3 position = anchor != null
-                ? anchor.transform.position + new Vector3(0f, 0f, 1.0f)
-                : new Vector3(2.0f, 0.05f, -1.2f);
+            // Inside the home room, beside the bed (BuildingInteriors); at the house's front door only if the room
+            // could not be built.
+            Vector3 position;
+            if (!BuildingInteriors.TryGetInteractPoint(BuildingInteriors.HomeId, out position, out float radius))
+            {
+                GameObject anchor = GameObject.Find(PlayerHouseAnchor);
+                position = anchor != null
+                    ? anchor.transform.position + new Vector3(0f, 0f, 1.0f)
+                    : new Vector3(2.0f, 0.05f, -1.2f);
+                radius = 0f;
+            }
 
             var obj = new GameObject("Location_Home");
             obj.transform.position = position;
-            obj.AddComponent<HomeInteraction>();
+            HomeInteraction home = obj.AddComponent<HomeInteraction>();
+            if (radius > 0f)
+            {
+                home.SetInteractRadius(radius);
+            }
         }
 
         static void EnsureBank()
@@ -56,14 +69,25 @@ namespace MaliGo.World
                 return;
             }
 
-            GameObject anchor = GameObject.Find(BankBuildingAnchor) ?? GameObject.Find(CommercialHubAnchor);
-            Vector3 position = anchor != null
-                ? anchor.transform.position + new Vector3(0.3f, 0f, 0.3f)
-                : new Vector3(-1.7f, 0.05f, 4.7f);
+            // Inside the Bank room, at the teller counter (BuildingInteriors); at the building only if the room could
+            // not be built.
+            Vector3 position;
+            if (!BuildingInteriors.TryGetInteractPoint(BuildingInteriors.BankId, out position, out float radius))
+            {
+                GameObject anchor = GameObject.Find(BankBuildingAnchor) ?? GameObject.Find(CommercialHubAnchor);
+                position = anchor != null
+                    ? anchor.transform.position + new Vector3(0.3f, 0f, 0.3f)
+                    : new Vector3(-1.7f, 0.05f, 4.7f);
+                radius = 0f;
+            }
 
             var obj = new GameObject("Location_Bank");
             obj.transform.position = position;
-            obj.AddComponent<BankInteraction>();
+            BankInteraction bank = obj.AddComponent<BankInteraction>();
+            if (radius > 0f)
+            {
+                bank.SetInteractRadius(radius);
+            }
         }
 
         static void EnsureWork()

@@ -231,6 +231,8 @@ namespace MaliGo.UI.Kit
             public const int Pause = 70;
             public const int ResetConfirm = 75;
             public const int CoachMarks = 80;
+            /// <summary>The quick fade when going through a door (walk-in rooms).</summary>
+            public const int DoorFade = 85;
             public const int Notices = 90;
         }
 

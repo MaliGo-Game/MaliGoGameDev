@@ -130,6 +130,9 @@ namespace MaliGo.PlayerIdentity
                 ScenarioWorldWiring.EnsureAllScenarioTriggers();
             });
 
+            // The walk-in rooms first: Home and Bank are placed inside them (beside the bed, at the counter).
+            Step("interiors", () => MaliGo.World.BuildingInteriors.Ensure());
+
             Step("world locations", MaliGo.World.WorldLocationWiring.EnsureLocations);
 
             Step("day flow", () => MaliGo.World.DayFlowController.Ensure());

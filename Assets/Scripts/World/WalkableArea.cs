@@ -1,3 +1,4 @@
+using System;
 using MaliGo.Core;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -14,6 +15,13 @@ namespace MaliGo.World
     ///
     /// The rectangle is on the XZ plane: <c>Rect.x</c>/<c>width</c> are world X, <c>Rect.y</c>/<c>height</c> are
     /// world Z. Computed lazily and cached per scene, so no per-frame searches.
+    ///
+    /// Inside a building (<see cref="EnterInterior"/>, called by <c>BuildingInteriors</c>) the ACTIVE area switches to
+    /// that room's floor, shrunk by <see cref="InteriorEdgeMargin"/>, and the camera bounds collapse to the room's
+    /// framing point with <see cref="InteriorViewSize"/> as the view size; <see cref="ExitInterior"/> switches back to
+    /// the town. <see cref="Changed"/> is raised on every switch. The rooms are built inside the town's XZ footprint
+    /// (high above it), so code that read the town rectangle once still lets the player walk the whole room; the
+    /// room's walls keep them in it.
     /// </summary>
     public static class WalkableArea
     {
@@ -30,10 +38,23 @@ namespace MaliGo.World
         const string SouthWall = "Boundary_South";
         const string NorthWall = "Boundary_North";
 
+        /// <summary>How far inside a room's floor edge the player's centre must stay (u, ~0.4 m; the walls and
+        /// furniture colliders do the rest).</summary>
+        public const float InteriorEdgeMargin = 0.1f;
+
         static int cachedSceneHandle;
         static bool cachedValid;
         static bool cachedFound;
         static Rect cachedArea;
+
+        static bool interiorActive;
+        static int interiorSceneHandle;
+        static Rect interiorFloor;
+        static Vector2 interiorFocus;
+        static float interiorViewSize;
+
+        /// <summary>Raised whenever the active area switches between the town and a room.</summary>
+        public static event Action Changed;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
@@ -42,11 +63,80 @@ namespace MaliGo.World
             cachedFound = false;
             cachedSceneHandle = 0;
             cachedArea = default;
+            interiorActive = false;
+            interiorSceneHandle = 0;
+            interiorFloor = default;
+            interiorFocus = default;
+            interiorViewSize = 0f;
+            Changed = null;
         }
 
-        /// <summary>The walkable rectangle of the active scene (XZ), or false when the scene has no town to
-        /// measure (e.g. character creation) - then nothing should be clamped.</summary>
+        /// <summary>True while the player is inside a room of the active scene.</summary>
+        public static bool IsInterior => interiorActive && interiorSceneHandle == SceneManager.GetActiveScene().handle;
+
+        /// <summary>The orthographic size that frames the current room, or 0 outside (keep the town's size).</summary>
+        public static float InteriorViewSize => IsInterior ? interiorViewSize : 0f;
+
+        /// <summary>
+        /// Makes the room whose floor is <paramref name="floor"/> (world XZ) the active area. The camera's follow
+        /// point is held at <paramref name="focus"/> (world XZ) with <paramref name="viewSize"/> as its size.
+        /// </summary>
+        public static void EnterInterior(Rect floor, Vector2 focus, float viewSize)
+        {
+            interiorActive = true;
+            interiorSceneHandle = SceneManager.GetActiveScene().handle;
+            interiorFloor = floor;
+            interiorFocus = focus;
+            interiorViewSize = Mathf.Max(0f, viewSize);
+            Changed?.Invoke();
+        }
+
+        /// <summary>Makes the town the active area again (a no-op outside).</summary>
+        public static void ExitInterior()
+        {
+            if (!interiorActive)
+            {
+                return;
+            }
+
+            interiorActive = false;
+            interiorViewSize = 0f;
+            Changed?.Invoke();
+        }
+
+        /// <summary>
+        /// The ACTIVE walkable rectangle (XZ): the current room's floor (shrunk by <see cref="InteriorEdgeMargin"/>)
+        /// while inside, otherwise the town. False only outside, when the scene has no town to measure (e.g.
+        /// character creation) - then nothing should be clamped.
+        /// </summary>
         public static bool TryGet(out Rect area)
+        {
+            bool hasTown = TryGetTown(out Rect town);
+            bool inside = IsInterior;
+            InteriorMath.ActiveArea(inside, town.xMin, town.xMax, town.yMin, town.yMax,
+                interiorFloor.xMin, interiorFloor.xMax, interiorFloor.yMin, interiorFloor.yMax, InteriorEdgeMargin,
+                out float minX, out float maxX, out float minZ, out float maxZ);
+            area = Rect.MinMaxRect(minX, minZ, maxX, maxZ);
+            return inside || hasTown;
+        }
+
+        /// <summary>
+        /// The rectangle (XZ) the camera's follow point is kept in: the town outside, a single point (the room's
+        /// framing point) inside. False when there is neither.
+        /// </summary>
+        public static bool TryGetCameraBounds(out Rect bounds)
+        {
+            bool hasTown = TryGetTown(out Rect town);
+            bool inside = IsInterior;
+            InteriorMath.CameraBounds(inside, town.xMin, town.xMax, town.yMin, town.yMax, interiorFocus.x, interiorFocus.y,
+                out float minX, out float maxX, out float minZ, out float maxZ);
+            bounds = Rect.MinMaxRect(minX, minZ, maxX, maxZ);
+            return inside || hasTown;
+        }
+
+        /// <summary>The town's walkable rectangle (XZ), whatever the active area is; false when the scene has no
+        /// town to measure.</summary>
+        public static bool TryGetTown(out Rect area)
         {
             int handle = SceneManager.GetActiveScene().handle;
             if (!cachedValid || handle != cachedSceneHandle)

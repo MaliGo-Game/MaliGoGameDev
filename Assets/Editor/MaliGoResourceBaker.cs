@@ -25,6 +25,7 @@ public static class MaliGoResourceBaker
         // The Kenney adventure UI sprites are no longer baked or shipped (DESIGN_SPEC §7.13, D10): the new UI
         // kit draws its own surfaces.
         BakePlayerCharacterCatalog();
+        BakeInteriorPieceCatalog();
         // SaveAssets only, no AssetDatabase.Refresh(): everything above goes through AssetDatabase.CreateAsset /
         // SetDirty, which needs no refresh, and BuildAndroidBeta calls this right before BuildPlayer, where a
         // Refresh could pick up the scripting-define change from MaliGoAndroidSetup.Configure, start a script
@@ -93,6 +94,49 @@ public static class MaliGoResourceBaker
         {
             Debug.LogWarning($"[MaliGoResourceBaker] Animator controller not found at {AnimatorPath} - player will not animate. Enter Play Mode once in the Editor to auto-generate it.");
         }
+    }
+
+    /// <summary>
+    /// The furniture-kit models the walk-in rooms use (InteriorRoomBuilder.PieceIds, about 16 small FBX meshes):
+    /// referenced from a catalog in Resources so exactly these ship, and nothing else from the kit.
+    /// </summary>
+    static void BakeInteriorPieceCatalog()
+    {
+        string assetPath = ResourcesRoot + "/" + MaliGo.World.InteriorPieceCatalog.ResourceName + ".asset";
+        var catalog = AssetDatabase.LoadAssetAtPath<MaliGo.World.InteriorPieceCatalog>(assetPath);
+        bool isNew = catalog == null;
+        if (isNew)
+        {
+            catalog = ScriptableObject.CreateInstance<MaliGo.World.InteriorPieceCatalog>();
+        }
+
+        string[] ids = MaliGo.World.InteriorRoomBuilder.PieceIds;
+        var pieces = new MaliGo.World.InteriorPieceCatalog.Piece[ids.Length];
+        int missing = 0;
+        for (int i = 0; i < ids.Length; i++)
+        {
+            string modelPath = MaliGo.World.InteriorPieceCatalog.FurnitureFolder + ids[i] + ".fbx";
+            GameObject model = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
+            if (model == null)
+            {
+                missing++;
+                Debug.LogWarning($"[MaliGoResourceBaker] Furniture model not found at {modelPath} - the room will use a plain box for it.");
+            }
+
+            pieces[i] = new MaliGo.World.InteriorPieceCatalog.Piece { id = ids[i], prefab = model };
+        }
+
+        catalog.pieces = pieces;
+        if (isNew)
+        {
+            AssetDatabase.CreateAsset(catalog, assetPath);
+        }
+        else
+        {
+            EditorUtility.SetDirty(catalog);
+        }
+
+        Debug.Log($"[MaliGoResourceBaker] Interior piece catalog: {ids.Length - missing} of {ids.Length} furniture models.");
     }
 
     static PlayerCharacterCatalog.SkinOption MakeSkin(string id, string texturePath)

@@ -66,24 +66,28 @@ namespace MaliGo.Economy
                 return digits;
             }
 
-            var builder = new StringBuilder(digits.Length + digits.Length / 3);
+            // Built by hand into a char array. StringBuilder.Append(string, int, int) hung the IL2CPP Android build
+            // inside the library (main thread stuck, managed heap growing ~270 MB/s until Android killed the game),
+            // which froze every count-up of an amount of R1 000 or more: after a choice, at the Bank, at Sleep.
             int lead = digits.Length % 3;
-            if (lead > 0)
+            if (lead == 0)
             {
-                builder.Append(digits, 0, lead);
+                lead = 3;
             }
 
-            for (int i = lead; i < digits.Length; i += 3)
+            var chars = new char[digits.Length + (digits.Length - 1) / 3];
+            int write = 0;
+            for (int read = 0; read < digits.Length; read++)
             {
-                if (builder.Length > 0)
+                if (read > 0 && (read - lead) % 3 == 0)
                 {
-                    builder.Append(' ');
+                    chars[write++] = ' ';
                 }
 
-                builder.Append(digits, i, 3);
+                chars[write++] = digits[read];
             }
 
-            return builder.ToString();
+            return new string(chars, 0, write);
         }
     }
 }

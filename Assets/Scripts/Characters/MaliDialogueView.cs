@@ -433,9 +433,9 @@ namespace MaliGo.Characters
                 return;
             }
 
-            var builder = new StringBuilder(page.Length + HiddenOpen.Length + HiddenClose.Length);
-            builder.Append(page, 0, revealed).Append(HiddenOpen).Append(page, revealed, page.Length - revealed).Append(HiddenClose);
-            target.text = builder.ToString();
+            // Substring + concat, not StringBuilder.Append(string, int, int), which hung the IL2CPP Android build
+            // (see MoneyFormat.Group).
+            target.text = string.Concat(page.Substring(0, revealed), HiddenOpen, page.Substring(revealed), HiddenClose);
         }
 
         void SetCueVisible(bool visible)

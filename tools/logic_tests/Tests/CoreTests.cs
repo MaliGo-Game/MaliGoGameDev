@@ -721,6 +721,21 @@ public static class CoreTests
         Assert.Equal("R1 250", MoneyFormat.Rand(1250f), "1250");
         Assert.Equal("R12 450", MoneyFormat.Rand(12450f), "12450");
         Assert.Equal("R1 000 000", MoneyFormat.Rand(1000000f), "1000000");
+
+        // The hand-built grouping (no StringBuilder) against a reference, for every amount up to 2 000 000.
+        for (int v = 0; v <= 2000000; v++)
+        {
+            string expected = "R" + v.ToString("#,0", System.Globalization.CultureInfo.InvariantCulture).Replace(',', ' ');
+            string actual = MoneyFormat.Rand(v);
+            if (actual != expected)
+            {
+                Assert.Equal(expected, actual, "grouping " + v);
+                break;
+            }
+        }
+
+        Assert.Equal("−R1 234 567", MoneyFormat.Rand(-1234567f), "negative grouping");
+        Assert.True(MoneyFormat.Rand(float.MaxValue).Length > 0, "huge amounts format without throwing");
         Assert.Equal("R100", MoneyFormat.Rand(100f), "100");
         Assert.Equal("R999", MoneyFormat.Rand(999f), "999");
         Assert.Equal("R1 000", MoneyFormat.Rand(1000f), "1000");

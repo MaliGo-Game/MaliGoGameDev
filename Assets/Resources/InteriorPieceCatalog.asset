@@ -1,0 +1,47 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5f0bfaa7fc434986843e95de0e94363e, type: 3}
+  m_Name: InteriorPieceCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::MaliGo.World.InteriorPieceCatalog
+  pieces:
+  - id: bedSingle
+    prefab: {fileID: 919132149155446097, guid: 863f62166bd9f484195ba349ee623d1e, type: 3}
+  - id: cabinetBedDrawerTable
+    prefab: {fileID: 919132149155446097, guid: a37c7d5296c5e884eac9dcd796c2cbdd, type: 3}
+  - id: lampSquareTable
+    prefab: {fileID: 919132149155446097, guid: bccd48a3d7d641c4a9ef1d238971e2c0, type: 3}
+  - id: kitchenCabinet
+    prefab: {fileID: 919132149155446097, guid: 0db8ad8699811f0419a51dd33ac9608b, type: 3}
+  - id: kitchenCoffeeMachine
+    prefab: {fileID: 919132149155446097, guid: 6dea7e4d184126a40a70582f3db79b75, type: 3}
+  - id: kitchenFridgeSmall
+    prefab: {fileID: 919132149155446097, guid: 176754026091fd14081a261b814171b9, type: 3}
+  - id: table
+    prefab: {fileID: 919132149155446097, guid: 46b9ecffa2a8e8348a73541d4d17fd60, type: 3}
+  - id: chairCushion
+    prefab: {fileID: 919132149155446097, guid: ebfcb20e957b41140b43eb807f4b3925, type: 3}
+  - id: rugRectangle
+    prefab: {fileID: 919132149155446097, guid: 6507d6c272c7efe44bda58eddb617700, type: 3}
+  - id: rugDoormat
+    prefab: {fileID: 919132149155446097, guid: ffaaa8618f9477d4bbcf08ae135b69a8, type: 3}
+  - id: pottedPlant
+    prefab: {fileID: 919132149155446097, guid: ac8156c0f370e904dab59abc086c4fc8, type: 3}
+  - id: doorway
+    prefab: {fileID: 919132149155446097, guid: ba38cf49713f3a141a0932e05ad3dfd3, type: 3}
+  - id: radio
+    prefab: {fileID: 919132149155446097, guid: b63647b637a984340894b3239b251096, type: 3}
+  - id: kitchenBar
+    prefab: {fileID: 919132149155446097, guid: 8404cdaa93df41246916be05f1c20c00, type: 3}
+  - id: computerScreen
+    prefab: {fileID: 919132149155446097, guid: bfa177a45150faf4c8d5fe0c17168a02, type: 3}
+  - id: chairDesk
+    prefab: {fileID: 919132149155446097, guid: 3da95b3e9b4826047a4aa65c97db9c6e, type: 3}

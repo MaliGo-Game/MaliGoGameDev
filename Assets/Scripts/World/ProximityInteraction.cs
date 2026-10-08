@@ -74,11 +74,13 @@ namespace MaliGo.World
         public virtual string PromptIcon => promptIcon;
 
         /// <summary>
-        /// True for a location at a building's door (Home, Bank): using it reads as going inside, so the camera
-        /// steps in toward the door while its sheet is open (<c>MaliGoCameraController</c>). The buildings are
-        /// closed shells with no interior, so there is nothing to walk into.
+        /// Sets <see cref="InteractRadius"/>: Home and Bank are used inside their small rooms (at the bed and the
+        /// teller counter, see <c>BuildingInteriors</c>), where the default 0.7 would cover the whole room.
         /// </summary>
-        public virtual bool IsBuildingEntrance => false;
+        public void SetInteractRadius(float radius)
+        {
+            interactionRadius = Mathf.Max(0.05f, radius);
+        }
 
         public void Interact()
         {

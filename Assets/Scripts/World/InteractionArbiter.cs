@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using MaliGo.Core;
 using MaliGo.UI.Kit;
 using UnityEngine;
 
@@ -10,7 +11,8 @@ namespace MaliGo.World
     ///
     /// The registry is static so scene objects can register in <c>OnEnable</c> before the bootstrap creates
     /// the arbiter. Every frame the arbiter drops destroyed entries, then picks the nearest available World
-    /// interactable within its radius of the player; a Companion only when nothing else is near and the player has
+    /// interactable within its radius of the player and in the player's space (the town or the room they are in,
+    /// <see cref="InteriorMath.SameSpace"/>); a Companion only when nothing else is near and the player has
     /// stood still for 0.6 s (Mali is not registered: she is talked to from the HUD). Nothing is current while any modal is open. A tap (prompt or action button, via
     /// <see cref="RequestInteract"/>) or E calls the current one's <c>Interact</c>, or <c>OnDisabledTap</c> when it is
     /// greyed out. The request is cleared every frame whether or not anything used it.
@@ -263,7 +265,17 @@ namespace MaliGo.World
                     continue;
                 }
 
-                Vector3 delta = candidate.InteractPosition - playerPosition;
+                Vector3 candidatePosition = candidate.InteractPosition;
+
+                // Only what is in the player's space: the walk-in rooms are built high above the town
+                // (BuildingInteriors), so a bed or a counter is never offered from the street below it and a street
+                // spot is never offered from inside a room.
+                if (!InteriorMath.SameSpace(playerPosition.y, candidatePosition.y))
+                {
+                    continue;
+                }
+
+                Vector3 delta = candidatePosition - playerPosition;
                 delta.y = 0f;
                 float distance = delta.magnitude;
                 if (distance > candidate.InteractRadius)

@@ -1,5 +1,5 @@
 using UnityEngine;
-using MaliGo.UI.Kit;
+using MaliGo.Core;
 using MaliGo.World;
 
 public class MaliGoCameraController : MonoBehaviour
@@ -34,26 +34,15 @@ public class MaliGoCameraController : MonoBehaviour
     const float OrthographicMaxZoom = 3.2f;
 
     /// <summary>
-    /// "Going in": the buildings are closed shells with no interior, so using a door (Home, Bank) steps the
-    /// camera in toward it instead - the view tightens to this fraction of its size and drifts this far toward the
-    /// door, held while the location's sheet is open, and eases back out when it closes. Reduce motion skips it.
+    /// How quickly the view size eases between the town's size and a room's (<see cref="WalkableArea.InteriorViewSize"/>),
+    /// per second on unscaled time: ~95 % of the way in a quarter of a second, mostly behind the door fade.
     /// </summary>
-    const float EntryZoomFactor = 0.8f;
-    const float EntryFocusShift = 0.5f;
-    const float EntryBlendSeconds = 0.35f;
-    /// <summary>If no sheet opens within this long after the tap, the step-in is let go anyway.</summary>
-    const float EntryWaitForModalSeconds = 1f;
+    const float ViewSizeSharpness = 12f;
 
     private Camera mainCamera;
     private Vector3 currentVelocity = Vector3.zero;
     private float baseOrthographicSize = OrthographicSize;
-
-    private InteractionArbiter subscribedArbiter;
-    private bool entryActive;
-    private bool entrySawModal;
-    private float entryStartTime;
-    private float entryBlend;
-    private Vector3 entryFocus;
+    private bool snapPending;
 
     void Awake()
     {
@@ -87,15 +76,7 @@ public class MaliGoCameraController : MonoBehaviour
             }
         }
 
-        // The camera follows a point that never leaves the walkable town, the same area the player is kept in
-        // (MaliGoPlayerController). The scene's +/-35 bounds were never applied and were far larger than the
-        // 35 x 35 u lawn. The lawn reaches at least 11 u past every edge of the town, more than the view shows
-        // from any point in it, so the screen never runs past the ground into the background.
-        if (WalkableArea.TryGet(out Rect area))
-        {
-            minBounds = new Vector3(area.xMin, minBounds.y, area.yMin);
-            maxBounds = new Vector3(area.xMax, maxBounds.y, area.yMax);
-        }
+        RefreshBounds();
 
         if (target != null && followTarget)
         {
@@ -103,39 +84,43 @@ public class MaliGoCameraController : MonoBehaviour
         }
     }
 
-    void OnDestroy()
+    /// <summary>
+    /// Jumps straight to the target on the next LateUpdate instead of gliding there. Called when the player is moved
+    /// through a door (behind the fade), so the camera never flies from the street up to a room; the view size still
+    /// eases to the new area's size, settling as the fade lifts.
+    /// </summary>
+    public void SnapToTarget()
     {
-        if (subscribedArbiter != null)
-        {
-            subscribedArbiter.Interacted -= OnInteracted;
-            subscribedArbiter = null;
-        }
+        snapPending = true;
     }
 
     void LateUpdate()
     {
-        SubscribeToArbiter();
-        UpdateEntry();
-
-        float eased = Mathf.SmoothStep(0f, 1f, entryBlend);
+        RefreshBounds();
 
         if (followTarget && target != null)
         {
-            Vector3 focus = Focus();
-            if (eased > 0f)
+            Vector3 desiredPos = Focus() + offset;
+            if (snapPending)
             {
-                Vector3 doorway = new Vector3(entryFocus.x, focus.y, entryFocus.z);
-                focus = Vector3.Lerp(focus, doorway, eased * EntryFocusShift);
+                transform.position = desiredPos;
+                currentVelocity = Vector3.zero;
             }
-
-            Vector3 desiredPos = focus + offset;
-            transform.position = Vector3.SmoothDamp(transform.position, desiredPos, ref currentVelocity, 1f / Mathf.Max(0.1f, smoothSpeed));
+            else
+            {
+                transform.position = Vector3.SmoothDamp(transform.position, desiredPos, ref currentVelocity, 1f / Mathf.Max(0.1f, smoothSpeed));
+            }
         }
 
         if (mainCamera != null)
         {
-            mainCamera.orthographicSize = baseOrthographicSize * Mathf.Lerp(1f, EntryZoomFactor, eased);
+            // Inside a room the view frames the whole (small) room; outside it is the town's size (and zoom).
+            float interiorSize = WalkableArea.InteriorViewSize;
+            float goal = interiorSize > 0f ? interiorSize : baseOrthographicSize;
+            mainCamera.orthographicSize = InteriorMath.Ease(mainCamera.orthographicSize, goal, ViewSizeSharpness, Time.unscaledDeltaTime);
         }
+
+        snapPending = false;
 
         // Keep isometric camera angle locked
         transform.rotation = Quaternion.Euler(isometricRotation);
@@ -146,6 +131,22 @@ public class MaliGoCameraController : MonoBehaviour
         HandleZooming();
     }
 
+    /// <summary>
+    /// The follow point stays inside the active area's camera bounds (<see cref="WalkableArea.TryGetCameraBounds"/>):
+    /// in the town, the walkable town, the same area the player is kept in (the scene's +/-35 bounds were never
+    /// applied and were far larger than the 35 x 35 u lawn; the lawn reaches at least 11 u past every edge of the
+    /// town, more than the view shows, so the screen never runs past the ground). Inside a room the bounds are the
+    /// room's framing point, so the camera holds the whole room still. Read every frame: a cached static, no search.
+    /// </summary>
+    void RefreshBounds()
+    {
+        if (WalkableArea.TryGetCameraBounds(out Rect area))
+        {
+            minBounds = new Vector3(area.xMin, minBounds.y, area.yMin);
+            maxBounds = new Vector3(area.xMax, maxBounds.y, area.yMax);
+        }
+    }
+
     /// <summary>The target's position with X and Z kept inside <see cref="minBounds"/>/<see cref="maxBounds"/>.</summary>
     Vector3 Focus()
     {
@@ -153,65 +154,6 @@ public class MaliGoCameraController : MonoBehaviour
         position.x = Mathf.Clamp(position.x, minBounds.x, maxBounds.x);
         position.z = Mathf.Clamp(position.z, minBounds.z, maxBounds.z);
         return position;
-    }
-
-    /// <summary>The arbiter is created by the bootstrap, possibly after this camera starts: subscribe once it exists.</summary>
-    void SubscribeToArbiter()
-    {
-        InteractionArbiter arbiter = InteractionArbiter.Instance;
-        if (arbiter == subscribedArbiter)
-        {
-            return;
-        }
-
-        if (subscribedArbiter != null)
-        {
-            subscribedArbiter.Interacted -= OnInteracted;
-        }
-
-        subscribedArbiter = arbiter;
-        if (subscribedArbiter != null)
-        {
-            subscribedArbiter.Interacted += OnInteracted;
-        }
-    }
-
-    void OnInteracted(IInteractable interactable)
-    {
-        if (!(interactable is ProximityInteraction location) || location == null || !location.IsBuildingEntrance)
-        {
-            return;
-        }
-
-        if (UiTween.ReduceMotion)
-        {
-            return;
-        }
-
-        entryActive = true;
-        entrySawModal = false;
-        entryStartTime = Time.unscaledTime;
-        entryFocus = location.InteractPosition;
-    }
-
-    /// <summary>Holds the step-in while the location's sheet (or what follows it, e.g. sleep and the reveal) is
-    /// open, then lets go; the blend runs on unscaled time so a paused game still eases back.</summary>
-    void UpdateEntry()
-    {
-        if (entryActive)
-        {
-            if (UiModal.IsAnyOpen)
-            {
-                entrySawModal = true;
-            }
-            else if (entrySawModal || Time.unscaledTime - entryStartTime > EntryWaitForModalSeconds)
-            {
-                entryActive = false;
-            }
-        }
-
-        float goal = entryActive ? 1f : 0f;
-        entryBlend = Mathf.MoveTowards(entryBlend, goal, Time.unscaledDeltaTime / EntryBlendSeconds);
     }
 
     void HandleZooming()

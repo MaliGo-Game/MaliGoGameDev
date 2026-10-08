@@ -97,8 +97,8 @@ namespace MaliGo.World
                 return;
             }
 
-            // The far end of the main road stands in for "town" (reachable from the west side of the
-            // parked van; 1.52 from the EAST spot, DESIGN_SPEC 3.3).
+            // The far end of the main road stands in for "town" (the taxi that stood on it is re-parked
+            // on the verge to the east, ParkedVehicles; 1.52 from the EAST spot, DESIGN_SPEC 3.3).
             GameObject anchor = GameObject.Find(EastRoadAnchor);
             Vector3 position = anchor != null
                 ? anchor.transform.position + new Vector3(0f, 0f, 0.3f)

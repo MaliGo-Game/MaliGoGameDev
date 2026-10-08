@@ -362,11 +362,13 @@ public class MaliGoWorldGenerator
         SpawnModel(CarPath + "sedan.fbx", new Vector3(2.0f, 0f, -0.6f), Quaternion.Euler(0, 0, 0), vehiclesRoot.transform, "Vehicle_PlayerCar");
 
         // Neighbor's car, in their driveway (Road_Neighbor_Driveway is at x=-4)
-        SpawnModel(CarPath + "suv.fbx", new Vector3(-4.0f, 0f, -0.6f), Quaternion.Euler(0, 0, 0), vehiclesRoot.transform, "Vehicle_NeighborSUV");
+        // (backed up its driveway so its nose stops at the kerb, not in the south lane)
+        SpawnModel(CarPath + "suv.fbx", new Vector3(-4.0f, 0f, -0.85f), Quaternion.Euler(0, 0, 0), vehiclesRoot.transform, "Vehicle_NeighborSUV");
 
-        // A couple of cars along the main east-west road (avoiding the intersection/crossing/driveway tiles)
-        SpawnModel(CarPath + "hatchback-sports.fbx", new Vector3(-3.0f, 0f, 0.15f), Quaternion.Euler(0, 90, 0), vehiclesRoot.transform, "Vehicle_MainRoad_1");
-        SpawnModel(CarPath + "taxi.fbx", new Vector3(4.0f, 0f, 0.15f), Quaternion.Euler(0, 270, 0), vehiclesRoot.transform, "Vehicle_MainRoad_2");
+        // Two cars on the north verge of the main road, just off the kerb: out of the lane and clear of the Work spot
+        // (4.0, 0.3), which the taxi used to stand on at (4.0, 0.15). Keep in step with MaliGo.Core.ParkedVehicles.
+        SpawnModel(CarPath + "hatchback-sports.fbx", new Vector3(-3.0f, 0f, 0.8f), Quaternion.Euler(0, 90, 0), vehiclesRoot.transform, "Vehicle_MainRoad_1");
+        SpawnModel(CarPath + "taxi.fbx", new Vector3(5.05f, 0f, 0.8f), Quaternion.Euler(0, 270, 0), vehiclesRoot.transform, "Vehicle_MainRoad_2");
 
         // Delivery van near the commercial hub, giving it some life - north of the Bank's west-facing door, not across
         // it (at z = 4.4 it covered the whole doorway and the spot the Bank's exit puts the player on).

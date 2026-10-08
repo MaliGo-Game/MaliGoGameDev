@@ -10,9 +10,9 @@ public class MaliGoPlayerController : MonoBehaviour
 {
     [Header("Movement Settings")]
     // Overwritten in Awake from MovementMath (a serialized value must not bring the old 4.5 u/s back).
-    public float moveSpeed = MovementMath.WalkSpeed;
-    public float acceleration = MovementMath.WalkSpeed / MovementMath.AccelerateSeconds;
-    public float deceleration = MovementMath.WalkSpeed / MovementMath.DecelerateSeconds;
+    public float moveSpeed = MovementMath.JogSpeed;
+    public float acceleration = MovementMath.Acceleration;
+    public float deceleration = MovementMath.Deceleration;
     public float gravity = -18f;
 
     [Header("Input Source")]
@@ -23,10 +23,23 @@ public class MaliGoPlayerController : MonoBehaviour
     public CharacterSpriteController spriteController;
     public PlayerCharacterVisualController visualController;
 
+    /// <summary>Downward speed kept while grounded, so every Move presses into the ground and
+    /// CharacterController.isGrounded stays true (with 0 it flips every other frame).</summary>
+    const float GroundStickSpeed = 0.5f;
+    const float MaxFallSpeed = 6f;
+
     private CharacterController characterController;
     private Vector3 currentHorizontalVelocity = Vector3.zero;
     private float verticalVelocity = 0f;
     private Vector2 lastNonZeroInput = Vector2.up;
+
+    // The body's heading (yaw, degrees) and speed along it: the player only ever moves the way they face, and
+    // turns toward the stick at a capped rate, so a sharp change of direction turns on the spot first.
+    private float facingYaw;
+    private float currentSpeed;
+    private float groundSpeed;
+    private float lastGroundSpeed;
+    private bool wasGrounded;
 
     private bool hasWalkableArea;
     private Rect walkableArea;
@@ -34,10 +47,10 @@ public class MaliGoPlayerController : MonoBehaviour
     void Awake()
     {
         // Enforced here, like the camera's orthographic size, so a stale serialized 4.5 (from when the character
-        // was ~100x too big) in a scene or prefab can't bring the 16 m/s sprint back. See MovementMath.WalkSpeed.
-        moveSpeed = MovementMath.WalkSpeed;
-        acceleration = MovementMath.WalkSpeed / MovementMath.AccelerateSeconds;
-        deceleration = MovementMath.WalkSpeed / MovementMath.DecelerateSeconds;
+        // was ~100x too big) in a scene or prefab can't bring the 16 m/s sprint back. See MovementMath.JogSpeed.
+        moveSpeed = MovementMath.JogSpeed;
+        acceleration = MovementMath.Acceleration;
+        deceleration = MovementMath.Deceleration;
 
         Rigidbody rb = GetComponent<Rigidbody>();
         if (rb != null)
@@ -58,6 +71,9 @@ public class MaliGoPlayerController : MonoBehaviour
         if (visualController == null)
             visualController = GetComponentInChildren<PlayerCharacterVisualController>();
 
+        // Start facing the way the model already faces (prefab or spawner rotation), not snapping to +Z.
+        facingYaw = visualController != null ? visualController.transform.eulerAngles.y : transform.eulerAngles.y;
+
         // Measured once per scene (cached in WalkableArea); false outside the town scene, then nothing is clamped.
         hasWalkableArea = WalkableArea.TryGet(out walkableArea);
     }
@@ -69,11 +85,14 @@ public class MaliGoPlayerController : MonoBehaviour
 
     private void HandleMovement()
     {
+        float dt = Time.deltaTime;
         Vector2 input = GetMovementInput();
+        float inputMagnitude = input.magnitude;
+        float askedSpeed = MovementMath.SpeedForInput(inputMagnitude);
 
-        if (input.sqrMagnitude > 0.01f)
+        if (askedSpeed > 0f)
         {
-            lastNonZeroInput = input.normalized;
+            lastNonZeroInput = input / inputMagnitude;
         }
 
         // Screen-relative Isometric direction calculation
@@ -88,47 +107,84 @@ public class MaliGoPlayerController : MonoBehaviour
             camRight = Vector3.ProjectOnPlane(mainCam.transform.right, Vector3.up).normalized;
         }
 
-        // Isometric direction: W/Up moves toward upper screen, D/Right moves toward right screen
-        Vector3 targetMoveDirection = (camRight * input.x + camForward * input.y);
-        if (targetMoveDirection.sqrMagnitude > 1f)
+        // Isometric direction: W/Up moves toward upper screen, D/Right moves toward right screen.
+        // Turn the body toward it at a capped rate; while it still faces well away, ask for less speed (down to
+        // none), so the character turns on the spot instead of sliding sideways.
+        float targetSpeed = 0f;
+        if (askedSpeed > 0f)
         {
-            targetMoveDirection.Normalize();
+            Vector3 targetMoveDirection = camRight * input.x + camForward * input.y;
+            float targetYaw = MovementMath.YawOf(targetMoveDirection.x, targetMoveDirection.z);
+            facingYaw = MovementMath.TurnTowards(facingYaw, targetYaw, dt);
+            targetSpeed = askedSpeed * MovementMath.TurnSpeedFactor(MovementMath.DeltaAngle(facingYaw, targetYaw));
         }
 
-        // Smooth acceleration & deceleration
-        Vector3 targetVelocity = targetMoveDirection * moveSpeed;
-        float rate = (input.sqrMagnitude > 0.01f) ? acceleration : deceleration;
-        currentHorizontalVelocity = Vector3.MoveTowards(currentHorizontalVelocity, targetVelocity, rate * Time.deltaTime);
+        // Believable starts and stops (~0.25 s up to a jog, ~0.3 s to stand), always along the facing.
+        currentSpeed = MovementMath.ApproachSpeed(currentSpeed, Mathf.Min(targetSpeed, moveSpeed), dt);
+        currentHorizontalVelocity = Quaternion.Euler(0f, facingYaw, 0f) * Vector3.forward * currentSpeed;
         KeepInsideWalkableArea();
 
         // Grounding & Gravity
-        if (characterController != null)
+        Vector3 positionBefore = transform.position;
+        if (characterController != null && characterController.enabled)
         {
-            if (characterController.isGrounded)
+            if (characterController.isGrounded && verticalVelocity <= 0f)
             {
-                if (verticalVelocity < 0f)
-                {
-                    verticalVelocity = -2f; // Keep grounded against slopes
-                }
+                verticalVelocity = -GroundStickSpeed; // press into the ground every frame
             }
             else
             {
-                verticalVelocity += gravity * Time.deltaTime;
+                verticalVelocity = Mathf.Max(verticalVelocity + gravity * dt, -MaxFallSpeed);
             }
 
             Vector3 finalMoveVector = currentHorizontalVelocity + (Vector3.up * verticalVelocity);
-            characterController.Move(finalMoveVector * Time.deltaTime);
+            characterController.Move(finalMoveVector * dt);
+            SnapDownToGround();
+            wasGrounded = characterController.isGrounded;
         }
 
+        // The legs follow how far the body really went (a wall or the town edge stops them), smoothed a little so
+        // a kerb or a frame hitch doesn't stutter them; never faster than asked.
+        Vector3 moved = transform.position - positionBefore;
+        moved.y = 0f;
+        float measured = dt > 0f ? Mathf.Min(moved.magnitude / dt, currentHorizontalVelocity.magnitude) : 0f;
+        lastGroundSpeed = groundSpeed;
+        groundSpeed = Mathf.Lerp(groundSpeed, measured, 1f - Mathf.Exp(-dt / 0.05f));
+        float forwardAcceleration = dt > 0f ? (groundSpeed - lastGroundSpeed) / dt : 0f;
+
         // Visual feedback for human player or legacy sprite characters.
-        bool isMoving = currentHorizontalVelocity.magnitude > 0.1f && input.sqrMagnitude > 0.01f;
         if (visualController != null)
         {
-            visualController.UpdateVisual(input, isMoving, currentHorizontalVelocity);
+            visualController.UpdateLocomotion(facingYaw, groundSpeed, forwardAcceleration);
         }
         else if (spriteController != null)
         {
-            spriteController.UpdateAnimation(input, isMoving);
+            spriteController.UpdateAnimation(input, groundSpeed > MovementMath.StartMovingSpeed && askedSpeed > 0f);
+        }
+    }
+
+    /// <summary>
+    /// Walking off a kerb or down a slope: if the capsule was on the ground last frame, is not now, and is not
+    /// jumping, and there is ground within a step's height below, put it straight back down instead of letting it
+    /// float down under gravity (which reads as gliding off every step).
+    /// </summary>
+    private void SnapDownToGround()
+    {
+        if (!wasGrounded || characterController.isGrounded || verticalVelocity > 0f)
+        {
+            return;
+        }
+
+        float reach = characterController.stepOffset + characterController.skinWidth * 2f;
+        float radius = characterController.radius * 0.9f;
+        Vector3 bottomSphere = transform.TransformPoint(characterController.center)
+            + Vector3.down * (characterController.height * 0.5f - characterController.radius);
+        if (Physics.SphereCast(bottomSphere, radius, Vector3.down, out RaycastHit hit, reach,
+                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore)
+            && hit.collider != characterController)
+        {
+            characterController.Move(Vector3.down * hit.distance);
+            verticalVelocity = -GroundStickSpeed;
         }
     }
 

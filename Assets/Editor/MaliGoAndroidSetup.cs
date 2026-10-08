@@ -76,6 +76,14 @@ public static class MaliGoAndroidSetup
         PlayerSettings.bundleVersion = AppVersion;
         PlayerSettings.Android.bundleVersionCode = AppVersionCode;
 
+        // Incremental GC off. On the IL2CPP Android build the main thread hung inside a managed allocation, with
+        // the managed heap growing ~270 MB/s until Android killed the game, a moment after work that allocates
+        // in bursts (saving after Sleep, a choice or a Bank move; Mali's line on Talk). The hang moved between
+        // allocation sites (StringBuilder in MoneyFormat, then Mali's greeting) for the same inputs that had just
+        // worked, so it is the collector, not one function. The standard collector's short pauses are fine for
+        // this game.
+        PlayerSettings.gcIncremental = false;
+
         ConfigureIcons();
         ConfigureSplash();
         RemoveAppUiLeftovers();

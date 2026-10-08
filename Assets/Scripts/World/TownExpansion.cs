@@ -13,7 +13,8 @@ namespace MaliGo.World
     ///
     /// Every world load (<see cref="Ensure"/>, a bootstrap step before the interiors):
     /// 1. The parked cars get one fitted box each on the Vehicle layer (<see cref="VehicleColliders"/>), and the
-    ///    delivery van that was parked across the Bank's door is moved up the kerb, clear of it.
+    ///    cars the scene left in the way are re-parked (ParkedVehicles): the van off the Bank's door, the taxi off
+    ///    the Work spot, the taxi and the hatchback out of the main road's lane onto its north verge.
     /// 2. With <see cref="MaliGoFeatures.TownExpansion"/> on: the road tiles, buildings and trees are instantiated
     ///    from the baked <see cref="TownPieceCatalog"/> under one "Town_Expansion" group (not under the generator's
     ///    measured groups, so the walkable town is the road rectangle, not the outer houses' back gardens). The
@@ -34,12 +35,6 @@ namespace MaliGo.World
         const string EnvironmentRootName = "--- ENVIRONMENT ---";
         const string RoadsGroupName = "Roads_Network";
         const string LawnName = "Ground_Lawn";
-
-        /// <summary>The van the generator parked across the Bank's west-facing door (its nose 0.33 u from the door,
-        /// its body covering the whole doorway and the spot the Bank's exit put the player on), and where it goes.</summary>
-        const string DeliveryVanName = "Vehicle_DeliveryVan";
-        static readonly Vector3 DeliveryVanScenePosition = new Vector3(-3.3f, 0f, 4.4f);
-        static readonly Vector3 DeliveryVanClearPosition = new Vector3(-3.3f, 0f, 5.25f);
 
         /// <summary>How far the boundary walls stand outside the road rectangle (u).</summary>
         const float WallMargin = 0.6f;
@@ -73,7 +68,7 @@ namespace MaliGo.World
             builtSceneHandle = handle;
 
             int cars = VehicleColliders.FitAll();
-            MoveVanOffBankDoor();
+            MoveParkedVehicles();
 
             if (!MaliGoFeatures.TownExpansion)
             {
@@ -114,21 +109,35 @@ namespace MaliGo.World
 
         // ================================================================ vehicles
 
-        static void MoveVanOffBankDoor()
+        /// <summary>
+        /// Re-parks the cars the scene left in the way (<see cref="ParkedVehicles"/>): the taxi off the Work spot and,
+        /// with the hatchback, out of the main road's lane onto the north verge; the van off the Bank's door. A car is
+        /// only moved while it still stands where the scene put it (a scene already fixed is left alone).
+        /// </summary>
+        static void MoveParkedVehicles()
         {
-            GameObject van = GameObject.Find(DeliveryVanName);
-            if (van == null)
+            foreach (ParkedVehicle parked in ParkedVehicles.All)
             {
-                return;
-            }
+                if (!parked.IsMoved)
+                {
+                    continue;
+                }
 
-            Vector3 position = van.transform.position;
-            if (new Vector2(position.x - DeliveryVanScenePosition.x, position.z - DeliveryVanScenePosition.z).sqrMagnitude > 0.01f)
-            {
-                return; // moved in the scene since; leave it
-            }
+                GameObject car = GameObject.Find(parked.Name);
+                if (car == null)
+                {
+                    continue;
+                }
 
-            van.transform.position = new Vector3(DeliveryVanClearPosition.x, position.y, DeliveryVanClearPosition.z);
+                Vector3 position = car.transform.position;
+                if (new Vector2(position.x - parked.SceneX, position.z - parked.SceneZ).sqrMagnitude > 0.01f)
+                {
+                    continue; // moved in the scene since; leave it
+                }
+
+                car.transform.SetPositionAndRotation(new Vector3(parked.X, position.y, parked.Z),
+                    Quaternion.Euler(0f, parked.Yaw, 0f));
+            }
         }
 
         // ================================================================ building
